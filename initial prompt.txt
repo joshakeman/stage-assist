@@ -1,0 +1,44 @@
+We are starting a portfolio application called Stage Assist.
+
+The application compares an original theatrical script with a rehearsal
+transcript and produces structured rehearsal notes. Specifically, it should produce what are 
+called line notes, which point out to an actor where the lines they deliver in rehearsal
+differ from the script, so that they can correct them. 
+
+This project is also intended to demonstrate professional Claude Code usage
+and prepare me for a software engineering role that uses Go on the backend
+and React on the frontend.
+
+The repository contains:
+
+- a Go backend in /backend
+- a React and TypeScript frontend in /frontend
+
+Architecture constraints:
+
+- Use Go for all backend and domain logic.
+- Use React and TypeScript for the frontend.
+- Begin with Go's standard net/http package rather than introducing a web
+  framework without a demonstrated need.
+- Deterministic Go code must handle parsing, normalization, alignment, and
+  objective text differences.
+- Claude should eventually be used only for ambiguous semantic evaluation and
+  generating human-friendly rehearsal notes.
+- The React application must not call Anthropic directly.
+- Do not add a database, authentication, audio transcription, containers, or
+  deployment during the first vertical slice.
+
+Before changing any files:
+
+1. Review the project goals and architecture constraints.
+2. Identify any assumptions or unresolved design questions that should be decided before implementation.
+3. Propose the smallest end-to-end vertical slice.
+4. Propose the simplest Go package structure that supports the first vertical slice. 
+    Avoid creating packages or interfaces for anticipated future requirements.
+5. Define the initial REST API.
+6. Define the React component structure for the first feature.
+7. Propose a staged implementation plan.
+8. Define verification criteria for each stage.
+9. Recommend what should go into the initial CLAUDE.md.
+
+Do not edit or create files. I want to review the plan before implementation.
