@@ -15,13 +15,35 @@ proxied through the Go backend.**
 
 ### Parsing vs. comparison boundary
 
-`ParseCues` (`internal/domain/cues.go`) is the only place that knows about
-"character" — it extracts one speaker's ordered lines from raw script/
-transcript text. Everything downstream (`Align`, `WordDiff`) operates on
-plain ordered `Cue`/`Token` sequences with no notion of character or
-speaker. Keep it this way: comparison logic must stay agnostic to how its
-input sequences were selected, so supporting a different extraction (e.g.
-a whole scene) is a change to `cues.go` only.
+Raw text becomes line notes through three stages, each ignorant of the
+stage before it:
+
+`ParsePlainTextScript` (`internal/domain/script.go`) → `Script` →
+`ExtractCues` (`internal/domain/cues.go`) → `Align`/`WordDiff`.
+
+`ParsePlainTextScript` knows about source *format* (today: the `CHARACTER:`
+colon convention) and nothing else — it has no idea which character will
+later be extracted. `ExtractCues` is the only place that knows about
+"character" — it walks a `Script` and pulls one speaker's ordered dialogue
+out of it, with no idea what format produced that `Script`. Everything
+downstream of that (`Align`, `WordDiff`) operates on plain ordered
+`Cue`/`Token` sequences with no notion of character, speaker, or format.
+Keep all three ignorant of each other: adding a format (Fountain, PDF,
+DOCX) is a new `Parse<Format>Script` function only; supporting a different
+extraction (e.g. a whole scene) is a change to `cues.go` only; neither
+should ever require touching `align.go`/`diff.go`.
+
+### Script model
+
+`Script`/`ScriptElement` (`internal/domain/script.go`) is the canonical,
+format-agnostic representation every parser must produce — the seam that
+makes multiple input formats possible without touching extraction or
+comparison. It's deliberately flat (no scene/character tree) and has three
+`ElementKind`s: `KindDialogue` (attributed to a character), `KindDirection`
+(high-confidence: a whole line that's a single parenthesized/bracketed
+span, e.g. `(He pauses.)`), and `KindUnclassified` (no positive signal
+either way — an honest "don't know," not a guess). A new format parser
+needs only to produce a `Script`; nothing else in the pipeline changes.
 
 ### Deterministic core
 
@@ -36,10 +58,11 @@ lines differ.
 
 - `backend/cmd/server` — binary entry point; wires `api.NewMux()` to
   `http.ListenAndServe`, nothing else.
-- `backend/internal/domain` — `cues.go` (character extraction),
-  `normalize.go` (tokenization), `diff.go` (generic LCS core + word-level
-  diff), `align.go` (cue-level diff + changed-pair heuristic). No HTTP,
-  no JSON, no external dependencies.
+- `backend/internal/domain` — `script.go` (canonical `Script` model +
+  `ParsePlainTextScript`), `cues.go` (`Cue` type + `ExtractCues` character
+  extraction), `normalize.go` (tokenization), `diff.go` (generic LCS core +
+  word-level diff), `align.go` (cue-level diff + changed-pair heuristic).
+  No HTTP, no JSON, no external dependencies.
 - `backend/internal/api` — `handlers.go` (JSON DTOs, `HandleCompare`,
   `NewMux`). Translates between the wire format and `internal/domain`;
   owns validation judgment calls domain functions don't make (e.g.
@@ -70,7 +93,8 @@ Frontend (from `frontend/`):
 ## Testing expectations
 
 - `internal/domain` tests are black-box (`package domain_test`) against
-  `ParseCues`/`WordDiff`/`Align`. The one exception is `lcsDiff` itself
+  `ParsePlainTextScript`/`ExtractCues`/`WordDiff`/`Align`. The one exception
+  is `lcsDiff` itself
   (`diff_internal_test.go`, white-box `package domain`) — it's tested
   directly with plain generic inputs because degenerate DP edge cases
   (empty slices, fully disjoint sequences) don't map onto realistic cue
@@ -88,9 +112,16 @@ No interfaces, provider abstractions, or repository patterns until a
 second concrete implementation actually needs one. An interface is
 justified when it marks a real external-service or testing boundary
 (e.g. a future Anthropic client the API layer depends on) — that's a
-legitimate seam, not speculation. `ParseCues` and `Align` have neither
-an external dependency nor a second implementation, so they stay plain
-functions.
+legitimate seam, not speculation. `ParsePlainTextScript`, `ExtractCues`,
+and `Align` have neither an external dependency nor a second
+implementation, so they stay plain functions. In particular: no `Parser`
+interface until a second concrete parser (Fountain, PDF, ...) actually
+exists — introduce it then, keyed off that second implementation, not in
+anticipation of one. Same for parse warnings/diagnostics: there's no
+consumer for them yet (no parse-preview UI, no diagnostics field in the
+API contract), so don't add a warnings type speculatively; `Script`
+already preserves the relevant information passively via
+`KindUnclassified`.
 
 ## Known limitation: the cue-pairing heuristic in `align.go`
 
@@ -104,3 +135,29 @@ separate `missing`/`extra` notes. Treat this as a provisional
 implementation: don't build new features that assume it's exact, and if
 it's revisited, prefer improving the similarity gate over adding a
 different alignment algorithm on top of it.
+
+## Known limitations: plain-text parsing in `script.go`
+
+`ParsePlainTextScript` only recognizes the `CHARACTER:` colon convention,
+where `CHARACTER` contains no lowercase letters. Specifically, and treated
+as accepted, stated limitations rather than bugs to silently work around:
+
+- No centered/standalone character-name lines (name alone on one line,
+  dialogue starting the next) — a distinct convention with its own design
+  questions, not yet supported.
+- A source label must be all-caps to be recognized as starting a cue (this
+  replaced a plain "any colon starts a cue" rule specifically to resolve
+  the ambiguity of dialogue that itself contains a colon, e.g. "She said:
+  come here" — see `isNewCueLine`'s doc comment). Matching a *requested*
+  character name at extraction time is still case-insensitive; only the
+  script's own authored label must be capitalized.
+- A blank line always ends a continuation, even for a mid-speech dramatic
+  pause a human would read as one continuous cue.
+- An all-caps phrase immediately before a colon inside continued dialogue
+  (e.g. "TO ARMS: everyone move now" as a spoken line) is still misread as
+  a new cue.
+- Consecutive stage-direction lines are not merged into one element; each
+  bracketed/parenthesized line is its own `KindDirection` element.
+
+No general inconsistent-formatting tolerance is attempted. Revisit any of
+these only when real usage demonstrates they matter.

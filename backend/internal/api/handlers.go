@@ -77,12 +77,12 @@ func HandleCompare(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	scriptCues := domain.ParseCues(script, character)
+	scriptCues := domain.ExtractCues(domain.ParsePlainTextScript(script), character)
 	if len(scriptCues) == 0 {
 		writeError(w, http.StatusBadRequest, fmt.Sprintf("character %q has no lines in the script", character))
 		return
 	}
-	transcriptCues := domain.ParseCues(transcript, character)
+	transcriptCues := domain.ExtractCues(domain.ParsePlainTextScript(transcript), character)
 
 	notes := domain.Align(scriptCues, transcriptCues)
 

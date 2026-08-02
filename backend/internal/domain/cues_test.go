@@ -6,10 +6,15 @@ import (
 	"github.com/joshakeman/stage-assist/backend/internal/domain"
 )
 
-func TestParseCuesConsecutiveCues(t *testing.T) {
+func extractCues(t *testing.T, text, character string) []domain.Cue {
+	t.Helper()
+	return domain.ExtractCues(domain.ParsePlainTextScript(text), character)
+}
+
+func TestExtractCuesConsecutiveCues(t *testing.T) {
 	text := "HAMLET: To be or not to be\nHAMLET: that is the question\n"
 
-	cues := domain.ParseCues(text, "HAMLET")
+	cues := extractCues(t, text, "HAMLET")
 	if len(cues) != 2 {
 		t.Fatalf("got %d cues, want 2: %+v", len(cues), cues)
 	}
@@ -18,41 +23,57 @@ func TestParseCuesConsecutiveCues(t *testing.T) {
 	}
 }
 
-func TestParseCuesCaseInsensitiveLabel(t *testing.T) {
-	text := "hamlet: To be or not to be\n"
+// Matching the requested character is case-insensitive; the script's own
+// label must still be all-caps to be recognized as a cue at all (see
+// isNewCueLine in script.go) -- that's a parsing rule, not an extraction
+// rule, so it's covered by TestParsePlainTextScriptLowercaseLabelIsNotACue.
+func TestExtractCuesCaseInsensitiveMatch(t *testing.T) {
+	text := "HAMLET: To be or not to be\n"
 
-	cues := domain.ParseCues(text, "HAMLET")
+	cues := extractCues(t, text, "hamlet")
 	if len(cues) != 1 {
 		t.Fatalf("got %d cues, want 1: %+v", len(cues), cues)
 	}
 }
 
-func TestParseCuesAbsentCharacter(t *testing.T) {
+func TestExtractCuesAbsentCharacter(t *testing.T) {
 	text := "OPHELIA: My lord\n"
 
-	cues := domain.ParseCues(text, "HAMLET")
+	cues := extractCues(t, text, "HAMLET")
 	if len(cues) != 0 {
 		t.Fatalf("got %d cues, want 0: %+v", len(cues), cues)
 	}
 }
 
-func TestParseCuesStripsParentheticals(t *testing.T) {
-	text := "HAMLET: (whispering) get out\n"
+func TestExtractCuesSkipsUnclassifiedElements(t *testing.T) {
+	text := "ACT ONE, SCENE ONE\nHAMLET: To be or not to be\n"
 
-	cues := domain.ParseCues(text, "HAMLET")
+	cues := extractCues(t, text, "HAMLET")
 	if len(cues) != 1 {
 		t.Fatalf("got %d cues, want 1: %+v", len(cues), cues)
 	}
-	if cues[0].Text != "get out" {
-		t.Fatalf("got text %q, want %q", cues[0].Text, "get out")
+	if cues[0].Text != "To be or not to be" {
+		t.Fatalf("unexpected cue text: %+v", cues)
 	}
 }
 
-func TestParseCuesSkipsUnlabeledLines(t *testing.T) {
-	text := "ACT ONE, SCENE ONE\nHAMLET: To be or not to be\n"
+func TestExtractCuesDirectionsDontDisruptOrdering(t *testing.T) {
+	text := "HAMLET: To be or not to be\n(He pauses.)\nHAMLET: that is the question\n"
 
-	cues := domain.ParseCues(text, "HAMLET")
-	if len(cues) != 1 {
-		t.Fatalf("got %d cues, want 1: %+v", len(cues), cues)
+	cues := extractCues(t, text, "HAMLET")
+	if len(cues) != 2 {
+		t.Fatalf("got %d cues, want 2: %+v", len(cues), cues)
+	}
+	if cues[0].Text != "To be or not to be" || cues[1].Text != "that is the question" {
+		t.Fatalf("unexpected cue text/order: %+v", cues)
+	}
+}
+
+func TestExtractCuesNoMatchingDialogueIsEmpty(t *testing.T) {
+	text := "ACT ONE, SCENE ONE\n(Enter Hamlet.)\n"
+
+	cues := extractCues(t, text, "HAMLET")
+	if len(cues) != 0 {
+		t.Fatalf("got %d cues, want 0: %+v", len(cues), cues)
 	}
 }

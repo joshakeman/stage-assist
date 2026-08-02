@@ -1,45 +1,37 @@
 package domain
 
-import (
-	"regexp"
-	"strings"
-)
+import "strings"
 
 // Cue is a single line of dialogue attributed to a character, in source order.
 type Cue struct {
 	Character string
 	Text      string
-	Line      int
+	StartLine int
+	EndLine   int
 }
 
-var parenthetical = regexp.MustCompile(`\([^)]*\)|\[[^\]]*\]`)
-
-// ParseCues extracts, in order, every cue spoken by character from text.
-// Lines are expected in "CHARACTER: dialogue" form; lines without a
-// recognizable "NAME:" prefix (scene headers, stage directions) are skipped.
-// Character matching is case-insensitive but otherwise exact, so
-// "HAMLET (O.S.):" is treated as a different label from "HAMLET:".
-func ParseCues(text string, character string) []Cue {
+// ExtractCues walks a parsed Script and returns, in order, every dialogue
+// element spoken by character. Character matching is case-insensitive but
+// otherwise exact, so "HAMLET (O.S.)" is treated as a different label from
+// "HAMLET". ExtractCues has no notion of source format -- it works
+// identically no matter which parser produced script.
+func ExtractCues(script Script, character string) []Cue {
 	character = strings.TrimSpace(character)
 
 	var cues []Cue
-	for i, raw := range strings.Split(text, "\n") {
-		idx := strings.Index(raw, ":")
-		if idx < 0 {
+	for _, el := range script.Elements {
+		if el.Kind != KindDialogue {
 			continue
 		}
-		label := strings.TrimSpace(raw[:idx])
-		if !strings.EqualFold(label, character) {
+		if !strings.EqualFold(el.Character, character) {
 			continue
 		}
-
-		spoken := parenthetical.ReplaceAllString(raw[idx+1:], "")
-		spoken = strings.Join(strings.Fields(spoken), " ")
-		if spoken == "" {
-			continue
-		}
-
-		cues = append(cues, Cue{Character: label, Text: spoken, Line: i + 1})
+		cues = append(cues, Cue{
+			Character: el.Character,
+			Text:      el.Text,
+			StartLine: el.StartLine,
+			EndLine:   el.EndLine,
+		})
 	}
 	return cues
 }
