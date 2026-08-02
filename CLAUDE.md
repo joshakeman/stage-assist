@@ -136,14 +136,33 @@ similarity ranking, and it is known to mis-pair when two genuinely
 unrelated cues happen to share a real content word by coincidence (e.g.
 both mention the same proper noun or topical word) — that pair is still
 reported as a false `changed` note instead of separate `missing`/`extra`
-notes. It's also known to under-pair a heavy paraphrase that shares zero
+notes (pinned by `TestAlignUnrelatedCuesSharingOneContentWordAreFalselyPairedAsChanged`).
+It's also known to under-pair a heavy paraphrase that shares zero
 vocabulary at all (rare), or a substitution where every *other* word in the
 cue is a stop word (e.g. "I love you" → "I hate you" has no shared content
 word once "I"/"you" are excluded) — both get reported as `missing`+`extra`
-instead of `changed`. Treat this as a provisional implementation: don't
-build new features that assume it's exact, and if it's revisited, prefer
-improving the similarity gate (e.g. weighting by shared-word count/ratio)
-over adding a different alignment algorithm on top of it.
+instead of `changed` (pinned by
+`TestAlignShortSubstitutionWithOnlyStopWordsInCommonIsFalselyMissingExtra`).
+
+**This is an accepted deterministic baseline, not a bug to keep chasing.**
+Both pinned tests assert today's behavior *as a known limitation*, not as
+desired behavior — their names and comments say so explicitly. Don't add
+further tuning to the word-overlap gate (weighting, thresholds, synonym
+lists, etc.) without a concrete case motivating it; the two tests exist so
+that if the gate is ever changed, updating them is a deliberate, visible
+decision, not a silently-passing accident.
+
+**Future semantic evaluation must narrow, not replace, this pipeline.** If
+Claude is ever introduced to reduce these false positives/negatives (per
+the "Deterministic core" principle above — Claude phrases or explains, it
+never decides whether two lines differ), it must operate only on the
+*ambiguous candidate pairs* deterministic alignment already produced —
+e.g. "is this positionally-adjacent missing+extra pair actually a
+paraphrase?" — not run over raw cue sequences as a second, LLM-driven
+alignment algorithm. `Align` always runs first and produces the full
+candidate structure (`exact`/`changed`/`missing`/`extra`); a semantic step,
+if added, relabels or explains specific pairs within that structure and
+nothing upstream of it.
 
 ## Known limitations: plain-text parsing in `script.go`
 

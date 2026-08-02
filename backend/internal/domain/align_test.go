@@ -151,6 +151,38 @@ func TestAlignParaphraseSharingContentWordsIsChanged(t *testing.T) {
 	wantStatuses(t, notes, domain.StatusChanged)
 }
 
+// Known heuristic limitation, NOT desired behavior: sharesContentWord only
+// requires one shared content word, with no threshold on how much of the
+// cue that word represents or how related the two cues actually are. Two
+// genuinely unrelated cues that happen to both mention the same noun are
+// still paired as "changed". This test pins today's behavior so that
+// improving the similarity gate later is a deliberate, visible change to
+// this assertion, not a silent regression discovered by surprise. See
+// CLAUDE.md's "cue-pairing heuristic" section.
+func TestAlignUnrelatedCuesSharingOneContentWordAreFalselyPairedAsChanged(t *testing.T) {
+	script := cuesFrom("The crown fell to the floor.")
+	transcript := cuesFrom("I saw the golden crown.")
+
+	notes := domain.Align(script, transcript)
+	wantStatuses(t, notes, domain.StatusChanged) // false positive, pinned intentionally
+}
+
+// Known heuristic limitation, NOT desired behavior: a short substitution
+// where every word except the one that actually changed is a stop word
+// loses its only shared content word once stop words are filtered out, so
+// it's reported as missing+extra instead of changed. A human would call
+// "I love you" -> "I hate you" a one-word substitution; the heuristic sees
+// zero shared content words ("i"/"you" are excluded, "love"/"hate" don't
+// match). This test pins today's behavior, not a goal -- see CLAUDE.md's
+// "cue-pairing heuristic" section for why this trade-off was accepted.
+func TestAlignShortSubstitutionWithOnlyStopWordsInCommonIsFalselyMissingExtra(t *testing.T) {
+	script := cuesFrom("I love you.")
+	transcript := cuesFrom("I hate you.")
+
+	notes := domain.Align(script, transcript)
+	wantStatuses(t, notes, domain.StatusMissing, domain.StatusExtra) // false negative, pinned intentionally
+}
+
 func TestAlignReorderedCuesAreMissingPlusExtra(t *testing.T) {
 	script := cuesFrom("Cue Alpha", "Cue Beta")
 	transcript := cuesFrom("Cue Beta", "Cue Alpha")
