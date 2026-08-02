@@ -82,7 +82,10 @@ func alignGap(script, transcript []Cue, gap []opStep) []LineNote {
 		}
 	}
 
-	paired := min(len(deletes), len(inserts))
+	paired := len(deletes)
+	if len(inserts) < paired {
+		paired = len(inserts)
+	}
 
 	var notes []LineNote
 	for k := 0; k < paired; k++ {
