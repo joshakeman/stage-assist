@@ -126,15 +126,24 @@ already preserves the relevant information passively via
 ## Known limitation: the cue-pairing heuristic in `align.go`
 
 `alignGap` pairs a gap's deletes and inserts *positionally* (first with
-first, second with second, ...), gated only by "do the two cues share at
-least one normalized word." This is a cheap heuristic, not a similarity
-ranking, and it is known to mis-pair in real usage — e.g. a genuinely
-dropped cue and an unrelated added cue that happen to share a common
-stopword (like "the") get reported as one false `changed` note instead of
-separate `missing`/`extra` notes. Treat this as a provisional
-implementation: don't build new features that assume it's exact, and if
-it's revisited, prefer improving the similarity gate over adding a
-different alignment algorithm on top of it.
+first, second with second, ...), gated by "do the two cues share at least
+one normalized *content* word" (`sharesContentWord`, `align.go`) — a small
+hardcoded stop-word list (articles, pronouns, prepositions, conjunctions,
+forms of "be"/"do"/"have") is excluded from that check specifically so two
+unrelated cues that both happen to contain "the" or "is" aren't mistaken
+for a paraphrase of each other. This is still a cheap heuristic, not a
+similarity ranking, and it is known to mis-pair when two genuinely
+unrelated cues happen to share a real content word by coincidence (e.g.
+both mention the same proper noun or topical word) — that pair is still
+reported as a false `changed` note instead of separate `missing`/`extra`
+notes. It's also known to under-pair a heavy paraphrase that shares zero
+vocabulary at all (rare), or a substitution where every *other* word in the
+cue is a stop word (e.g. "I love you" → "I hate you" has no shared content
+word once "I"/"you" are excluded) — both get reported as `missing`+`extra`
+instead of `changed`. Treat this as a provisional implementation: don't
+build new features that assume it's exact, and if it's revisited, prefer
+improving the similarity gate (e.g. weighting by shared-word count/ratio)
+over adding a different alignment algorithm on top of it.
 
 ## Known limitations: plain-text parsing in `script.go`
 

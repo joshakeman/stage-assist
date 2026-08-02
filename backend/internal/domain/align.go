@@ -69,9 +69,10 @@ func exactNote(script, transcript []Cue, s opStep) LineNote {
 // between two equal cues) into line notes. Deletes and inserts are paired
 // positionally — the first delete with the first insert, the second with the
 // second, and so on — and a pair becomes a single "changed" note only if the
-// two cues share at least one normalized word (a cheap similarity gate).
-// Anything left unpaired, or paired but sharing no words, is reported as
-// separate missing/extra notes rather than a false "changed" pairing.
+// two cues share at least one normalized *content* word (a cheap similarity
+// gate; see sharesContentWord for why stop words don't count). Anything left
+// unpaired, or paired but sharing no content word, is reported as separate
+// missing/extra notes rather than a false "changed" pairing.
 func alignGap(script, transcript []Cue, gap []opStep) []LineNote {
 	var deletes, inserts []int
 	for _, s := range gap {
@@ -91,7 +92,7 @@ func alignGap(script, transcript []Cue, gap []opStep) []LineNote {
 	for k := 0; k < paired; k++ {
 		scriptText := script[deletes[k]].Text
 		spokenText := transcript[inserts[k]].Text
-		if sharesToken(scriptText, spokenText) {
+		if sharesContentWord(scriptText, spokenText) {
 			notes = append(notes, LineNote{
 				Status:     StatusChanged,
 				ScriptText: scriptText,
@@ -119,15 +120,39 @@ func extraNote(spokenText string) LineNote {
 	return LineNote{Status: StatusExtra, SpokenText: spokenText, Diff: []WordDiffSpan{}}
 }
 
-// sharesToken reports whether a and b have at least one normalized word in
-// common.
-func sharesToken(a, b string) bool {
+// stopWords are common function words ignored when deciding whether two
+// cues are related. It's intentionally a small, unglamorous list --
+// articles, pronouns, prepositions, conjunctions, and forms of "be"/"do"/
+// "have" -- not a general-purpose NLP stopword corpus. These are exactly
+// the words two entirely unrelated sentences are likely to share by
+// coincidence, so they carry no evidence of relatedness on their own.
+var stopWords = map[string]bool{
+	"a": true, "an": true, "the": true,
+	"and": true, "or": true, "but": true, "nor": true,
+	"is": true, "are": true, "was": true, "were": true, "be": true, "been": true, "being": true, "am": true,
+	"to": true, "of": true, "in": true, "on": true, "at": true, "by": true, "for": true, "from": true, "with": true, "as": true,
+	"i": true, "you": true, "he": true, "she": true, "it": true, "we": true, "they": true,
+	"me": true, "him": true, "her": true, "us": true, "them": true,
+	"my": true, "your": true, "his": true, "its": true, "our": true, "their": true,
+	"this": true, "that": true, "these": true, "those": true,
+	"do": true, "does": true, "did": true, "have": true, "has": true, "had": true,
+	"will": true, "would": true, "shall": true, "should": true, "can": true, "could": true, "may": true, "might": true, "must": true,
+	"not": true, "no": true, "so": true,
+}
+
+// sharesContentWord reports whether a and b have at least one normalized
+// word in common that isn't a stop word. Ignoring stop words is what keeps
+// two unrelated cues that merely both contain "the" or "is" from being
+// mistaken for a paraphrase of each other.
+func sharesContentWord(a, b string) bool {
 	seen := make(map[string]bool)
 	for _, t := range Tokenize(a) {
-		seen[t.Norm] = true
+		if !stopWords[t.Norm] {
+			seen[t.Norm] = true
+		}
 	}
 	for _, t := range Tokenize(b) {
-		if seen[t.Norm] {
+		if !stopWords[t.Norm] && seen[t.Norm] {
 			return true
 		}
 	}

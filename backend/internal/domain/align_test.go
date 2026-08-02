@@ -122,6 +122,35 @@ func TestAlignUnrelatedDropAndAddAreNotPairedAsChanged(t *testing.T) {
 	}
 }
 
+// Regression test: two unrelated cues that happen to share only a stop
+// word ("the") must not be paired as "changed" -- the pairing gate must
+// require a shared *content* word, not just any shared word.
+func TestAlignUnrelatedCuesSharingOnlyStopWordsAreMissingPlusExtra(t *testing.T) {
+	script := cuesFrom("The crown belongs to me.")
+	transcript := cuesFrom("The door is open.")
+
+	notes := domain.Align(script, transcript)
+	wantStatuses(t, notes, domain.StatusMissing, domain.StatusExtra)
+	if notes[0].ScriptText != "The crown belongs to me." {
+		t.Errorf("missing note ScriptText = %q", notes[0].ScriptText)
+	}
+	if notes[1].SpokenText != "The door is open." {
+		t.Errorf("extra note SpokenText = %q", notes[1].SpokenText)
+	}
+}
+
+// A realistic paraphrase that swaps out a pronoun for a noun phrase must
+// still be recognized as "changed" -- stop-word filtering must not be so
+// aggressive that it also discards the real shared content words ("bring",
+// "forward") that make this pairing correct.
+func TestAlignParaphraseSharingContentWordsIsChanged(t *testing.T) {
+	script := cuesFrom("Bring the prisoner forward.")
+	transcript := cuesFrom("Bring him forward.")
+
+	notes := domain.Align(script, transcript)
+	wantStatuses(t, notes, domain.StatusChanged)
+}
+
 func TestAlignReorderedCuesAreMissingPlusExtra(t *testing.T) {
 	script := cuesFrom("Cue Alpha", "Cue Beta")
 	transcript := cuesFrom("Cue Beta", "Cue Alpha")
