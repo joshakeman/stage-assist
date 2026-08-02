@@ -13,7 +13,14 @@ interface LineNoteRowProps {
 }
 
 export function LineNoteRow({ note }: LineNoteRowProps) {
-  const showDiff = note.status === "exact" || note.status === "changed";
+  // Only "changed" has a real word-level diff to highlight. An "exact" cue's
+  // diff is, by construction, entirely "equal" spans (cue-level equality
+  // requires every token to normalize-match) -- and WordDiff's "equal" spans
+  // carry only the script's surface text, so rendering an exact cue through
+  // the diff would show the script's punctuation/wording on the spoken side
+  // too. Render each column's own text directly instead; there's nothing to
+  // diff.
+  const showDiff = note.status === "changed";
 
   return (
     <tr className={`line-note-row line-note-row--${note.status}`}>

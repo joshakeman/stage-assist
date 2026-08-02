@@ -151,6 +151,24 @@ func TestAlignWhitespaceAndPunctuationOnlyIsExact(t *testing.T) {
 	}
 }
 
+// Regression test: a cue whose dialogue itself contains a colon, spoken
+// with a comma instead, must still report ScriptText and SpokenText as
+// their own distinct, original surface strings -- neither one should be
+// silently replaced by the other just because the cue is normalized-equal.
+func TestAlignExactNoteKeepsDistinctSurfaceTextWithInternalColon(t *testing.T) {
+	script := cuesFrom("Wait: did you hear that?")
+	transcript := cuesFrom("Wait, did you hear that?")
+
+	notes := domain.Align(script, transcript)
+	wantStatuses(t, notes, domain.StatusExact)
+	if notes[0].ScriptText != "Wait: did you hear that?" {
+		t.Errorf("ScriptText = %q, want %q", notes[0].ScriptText, "Wait: did you hear that?")
+	}
+	if notes[0].SpokenText != "Wait, did you hear that?" {
+		t.Errorf("SpokenText = %q, want %q", notes[0].SpokenText, "Wait, did you hear that?")
+	}
+}
+
 func TestAlignEmptyTranscriptIsAllMissingNoError(t *testing.T) {
 	script := cuesFrom("Line one", "Line two", "Line three")
 	var transcript []domain.Cue

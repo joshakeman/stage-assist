@@ -161,3 +161,20 @@ as accepted, stated limitations rather than bugs to silently work around:
 
 No general inconsistent-formatting tolerance is attempted. Revisit any of
 these only when real usage demonstrates they matter.
+
+## Known limitation: `WordDiffSpan` only carries one surface string
+
+`WordDiff`'s `"equal"` spans store the surface text from the *script* side
+only (`diff.go`), since a real diff's equal words are normally assumed
+byte-identical. That assumption breaks when two cues are normalized-equal
+but surface-different (e.g. `"Wait: ..."` vs `"Wait, ..."`) — the spoken
+side's own punctuation/wording for an equal word isn't recoverable from
+`Diff` alone. For `exact` notes this doesn't matter: cue-level equality
+guarantees the whole `Diff` is `"equal"` spans, so the frontend
+(`LineNoteRow.tsx`) renders `scriptText`/`spokenText` directly instead of
+going through `WordDiffText`. The narrower case is `changed` notes that mix
+real changes with equal-but-surface-different words in the same cue — those
+still show the script's surface form for the equal portions on the spoken
+side. Fixing that fully would mean `WordDiffSpan` carrying separate
+script/spoken text for equal spans; not done since it's not the reported
+case and touches the wire contract. Revisit if real usage shows it matters.
