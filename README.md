@@ -53,6 +53,56 @@ specific design decisions, exact known limitations, and the conventions
 this repo follows), see [`CLAUDE.md`](./CLAUDE.md). This document stays
 at the "what and why," not the "how."
 
+## How this was built with Claude
+
+Every feature here — the deterministic comparison engine, the PDF import
+pipeline, the saved-script library — was built in collaboration with
+Claude Code, and the process is as much a part of this project as the
+code is. A few concrete moments that show what that collaboration
+actually looked like, rather than just asserting it happened:
+
+- **A security gap caught before it became code.** The original design
+  for verifying that Claude's PDF interpretation wasn't fabricated only
+  checked "does this excerpt exist somewhere in the source text." A
+  plan-review pass caught that this was gameable — a real, trivial anchor
+  (a character's name) could be paired with entirely invented dialogue
+  and still pass. The fix (requiring the delivered text to also overlap
+  the anchor, not just exist near it) was designed and tested before a
+  single line of the original approach was ever written.
+- **Real API calls, not just fakes, at the stages that mattered.**
+  Anthropic's API is genuinely non-deterministic, so a mocked test
+  proving an AI-dependent feature "works" would be proving the wrong
+  thing. The structured-output schema was validated against one real
+  call before any of the surrounding validation or UI was built around
+  it, and a whole evaluation suite exists specifically to check real
+  script layouts against the real API — deliberately gated so it never
+  runs by accident, since it costs real money.
+- **Two real bugs, found by actually using the app, not just testing
+  it.** A real 5-page script import returned a confusing "couldn't be
+  verified" error; digging in found that Claude's response was silently
+  getting cut off by a token limit sized for a much smaller test
+  fixture — fixed, and confirmed by deliberately forcing the same
+  failure again to see the new, clearer error message this time.
+  Separately, a line of dialogue that genuinely spans a printed page
+  break was wrongly flagged unverified, which led to a second, subtler
+  bug underneath it (a page-footer number a PDF-extraction library was
+  reading as part of the dialogue) that would have kept the first fix
+  from working at all on that real document.
+- **Decisions made and written down, not just made.** When it became
+  clear that avoiding all persistence was costing real money on every
+  repeat use, that tradeoff got discussed explicitly, decided on, and
+  then reflected honestly in this project's own documentation — rather
+  than left to quietly drift out of date the moment reality changed.
+
+None of this reflects "AI writes the code, human reviews it" so much as
+an ongoing back-and-forth: proposing a design for critique, catching
+cases where a plausible-looking approach had a real hole in it, and
+treating "the AI says it works" as a claim to verify against a real
+system, not a fact to accept. The fullest record of that lives in
+[`CLAUDE.md`](./CLAUDE.md) — the architecture brief that kept a long,
+multi-session collaboration consistent, updated at every stage rather
+than written once and left behind.
+
 ## Getting started
 
 You'll need Go and Node installed. From the repo root:
