@@ -1,0 +1,135 @@
+.script-import {
+  margin-bottom: 40px;
+}
+
+.pdf-upload-form {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.pdf-upload-form input[type="file"] {
+  font: inherit;
+  font-size: 14px;
+  color: var(--text-h);
+}
+
+.pdf-upload-form button,
+.script-import-actions button {
+  font-size: 16px;
+  padding: 8px 20px;
+  border-radius: 6px;
+  border: 2px solid transparent;
+  color: var(--accent);
+  background: var(--accent-bg);
+  cursor: pointer;
+  transition: border-color 0.3s;
+}
+
+.pdf-upload-form button:hover,
+.script-import-actions button:hover {
+  border-color: var(--accent-border);
+}
+
+.pdf-upload-form button:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.script-import-warning {
+  color: var(--text);
+  font-size: 14px;
+  font-style: italic;
+  margin-bottom: 16px;
+}
+
+.script-preview-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+  margin-bottom: 16px;
+}
+
+.script-preview-table th {
+  text-align: left;
+  padding: 6px 10px;
+  border-bottom: 2px solid var(--border);
+  color: var(--text-h);
+}
+
+.script-preview-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+
+.script-preview-table select,
+.script-preview-table input[type="text"] {
+  font: inherit;
+  font-size: 13px;
+  padding: 6px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text-h);
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.script-preview-text {
+  font: inherit;
+  font-family: var(--mono);
+  font-size: 13px;
+  padding: 6px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text-h);
+  width: 100%;
+  min-width: 240px;
+  box-sizing: border-box;
+  resize: vertical;
+}
+
+.script-preview-page {
+  white-space: nowrap;
+  color: var(--text);
+}
+
+.script-preview-flag {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  color: #b91c1c;
+  background: rgba(239, 68, 68, 0.14);
+}
+
+.script-preview-row--unverified {
+  background: rgba(239, 68, 68, 0.04);
+}
+
+.script-import-actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.script-import-secondary {
+  background: transparent !important;
+  color: var(--text) !important;
+}
+
+@media (prefers-color-scheme: dark) {
+  .script-preview-flag {
+    color: #fca5a5;
+    background: rgba(248, 113, 113, 0.16);
+  }
+
+  .script-preview-row--unverified {
+    background: rgba(248, 113, 113, 0.06);
+  }
+}
