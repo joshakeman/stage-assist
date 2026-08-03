@@ -1,19 +1,75 @@
 # Stage Assist
 
-Stage Assist helps an actor find out where their line delivery drifted
-from the script. Give it the original scene and a transcript of a
-rehearsal (or a run-through, a recording transcription, whatever you've
-got), and it lines up the two, cue by cue, and shows you exactly what
-changed: a word swapped here, a line dropped there, a whole speech added
-that wasn't in the original.
+In many theater productions, someone on the backstage staff does this by
+hand, every single rehearsal: records it, listens back to the entire
+recording, compares what was actually said against the script for every
+actor, writes line notes by hand, and emails them out before the next
+rehearsal. None of that is conceptually hard — it's just slow, repetitive,
+and it doesn't scale. Stage Assist exists to automate that workflow,
+starting with the hardest and most valuable part: the comparison itself.
 
-## What it does
+It's also a personal project for practicing idiomatic Go and
+React/TypeScript, so alongside "does it solve the problem," real
+attention has gone into "is it built well" — clear boundaries between
+pieces, deliberate and documented tradeoffs, and tests that pin down
+behavior rather than just checking the happy path.
+
+## The problem
+
+The manual version of this looks like:
+
+1. Record the rehearsal.
+2. Listen back to the *entire* recording, start to finish.
+3. Compare what was actually said against the script, line by line, for
+   every actor.
+4. Write line notes — who dropped a line, who paraphrased, who added
+   something that isn't in the script.
+5. Deliver those notes to the actors, usually by email, ideally before
+   the next rehearsal.
+
+A two-hour rehearsal takes at least two hours to review this way — every
+time, for the entire run of a show. That's the actual bottleneck this
+project exists to remove, not "wouldn't it be nice to have an app for
+this."
+
+## The vision
+
+Two separate problems have to be solved before any comparison is
+possible — understanding the script, whatever format it arrives in, and
+understanding the rehearsal, turning raw audio into a transcript that
+knows who said what — and both feed one accurate comparison that has to
+actually reach the people who need it:
+
+```
+Script (any format)  ──▶ understand it ──▶ canonical script ─┐
+                                                               ├─▶ compare accurately ──▶ actor-specific line notes ──▶ deliver
+Rehearsal audio ──▶ transcribe ──▶ attribute speakers ──▶ transcript ─┘
+```
+
+The rehearsal transcript is not the product — it's an intermediate
+representation needed to make the comparison possible. Neither is
+AI-assisted PDF parsing: it's one solution to one of the hard technical
+problems along the way, not the point of the project. The full
+breakdown of that pipeline — what's solved, what isn't, why each piece
+is hard, and what's next — lives in [`ROADMAP.md`](./ROADMAP.md).
+
+## What's built today
+
+Progress so far is entirely on the script-understanding and comparison
+side of that pipeline. The rehearsal-audio side — the actual "stop
+making someone listen to two hours of audio" problem — hasn't been
+started yet: today, a rehearsal transcript is pasted in as plain text, a
+stand-in for what should eventually come directly from audio. That's a
+real, current limitation, not a rounding error — see `ROADMAP.md` for
+why closing it is the top priority from here.
+
+What does work, end to end, today:
 
 1. **Bring a script.** Either paste it as plain text (using a simple
    `CHARACTER: dialogue` convention), or upload a short PDF excerpt and
    let Claude read the structure out of it for you.
-2. **Bring a transcript.** Plain text, same convention — this is what
-   actually got said, however it was captured.
+2. **Bring a transcript.** Plain text, same convention — a stand-in for
+   what should eventually be produced from a rehearsal recording.
 3. **Pick a character.** Stage Assist pulls just that character's lines
    out of both documents, in order.
 4. **Get line notes.** Each of that character's lines gets a status —
@@ -22,9 +78,34 @@ that wasn't in the original.
 
 The comparison itself is entirely deterministic: no AI is involved in
 deciding whether two lines match or how they differ. That's a plain,
-well-tested string-alignment algorithm. AI only comes in earlier, as an
-optional way to turn a PDF into structured text in the first place — and
-even then, nothing it produces is trusted until you've reviewed it.
+well-tested string-alignment algorithm — the single most important piece
+of trust in the whole system, since the product's entire value rests on
+an actor being able to trust that "you got this wrong" is a reproducible
+fact, not a guess. AI only comes in earlier, as an optional way to turn a
+PDF into structured text in the first place — and even then, nothing it
+produces is trusted until you've reviewed it.
+
+**Solid today, specifically:**
+
+- Comparing two plain-text scripts and getting a reliable, explainable
+  diff, including handling dropped lines, added lines, and paraphrased
+  lines, not just a naive line-by-line zip.
+- Importing a short PDF excerpt (a scene, not a full play) into that same
+  comparison flow, including layouts a simple text parser couldn't handle
+  on its own — centered character names, inline stage directions mid-line,
+  and so on — because an AI is doing the structural reading, with its
+  output checked against the source before you ever see it.
+- A review step before anything AI-produced is used: every imported line
+  is editable, deletable, and flagged if it couldn't be confirmed against
+  the source document, so nothing gets into a comparison without a human
+  saying so.
+- A named library for scripts you've already imported and reviewed: save
+  one once, and come back to it later without re-uploading the PDF or
+  paying for another AI pass — a real, non-trivial saving, since each
+  real import costs a small but real amount in AI usage. Loading skips
+  straight to a usable comparison; re-opening the same familiar review
+  table for a second look never re-calls the AI either, since the
+  reviewed content is already saved locally.
 
 ## How it's put together
 
@@ -40,7 +121,9 @@ lines has no idea what format the script came from, and comparing two
 sequences of lines has no idea any of that ever happened. That separation
 is what let PDF import get added later as an entirely new _front door_ —
 a second way to produce the same internal script representation — without
-touching a single line of the comparison logic itself.
+touching a single line of the comparison logic itself. The same seam is
+what should let a future audio-derived transcript slot in as a third way
+to reach the same comparison, without touching it either.
 
 For the full technical breakdown (package layout, the reasoning behind
 specific design decisions, exact known limitations, and the conventions
@@ -86,7 +169,10 @@ actually looked like, rather than just asserting it happened:
   clear that avoiding all persistence was costing real money on every
   repeat use, that tradeoff got discussed explicitly, decided on, and
   then reflected honestly in this project's own documentation — rather
-  than left to quietly drift out of date the moment reality changed.
+  than left to quietly drift out of date the moment reality changed. The
+  same discipline produced `ROADMAP.md`: stepping back from feature work
+  specifically to check it still matched the original product vision,
+  rather than letting implementation momentum quietly redefine the goal.
 
 None of this reflects "AI writes the code, human reviews it" so much as
 an ongoing back-and-forth: proposing a design for critique, catching
@@ -118,31 +204,18 @@ text works without it, but the server currently fails fast at startup if
 the key is missing at all, so you'll need a key (even a placeholder won't
 do; it has to be a real one to actually import a PDF).
 
-## What it's good at, and what it isn't (yet)
+## Known gaps
 
-**Solid today:**
+**The headline gap: there's no rehearsal-audio pipeline yet.** A
+transcript today is pasted plain text, not something produced from an
+actual recording — which means the single biggest piece of the original
+problem (manually listening to a whole rehearsal) isn't automated at
+all yet. Everything below is real, but secondary to this. See
+`ROADMAP.md` for why this is specifically hard (speaker diarization is
+fairly mature technology; mapping an anonymous speaker to a named script
+character is not) and what's planned.
 
-- Comparing two plain-text scripts and getting a reliable, explainable
-  diff, including handling dropped lines, added lines, and paraphrased
-  lines, not just a naive line-by-line zip.
-- Importing a short PDF excerpt (a scene, not a full play) into that same
-  comparison flow, including layouts a simple text parser couldn't handle
-  on its own — centered character names, inline stage directions mid-line,
-  and so on — because an AI is doing the structural reading, with its
-  output checked against the source before you ever see it.
-- A review step before anything AI-produced is used: every imported line
-  is editable, deletable, and flagged if it couldn't be confirmed against
-  the source document, so nothing gets into a comparison without a human
-  saying so.
-- A named library for scripts you've already imported and reviewed: save
-  one once, and come back to it later without re-uploading the PDF or
-  paying for another AI pass — a real, non-trivial saving, since each
-  real import costs a small but real amount in AI usage. Loading skips
-  straight to a usable comparison; re-opening the same familiar review
-  table for a second look never re-calls the AI either, since the
-  reviewed content is already saved locally.
-
-**Known gaps, by design (not oversights):**
+Everything else, by design, not oversight:
 
 - **Short excerpts only.** PDF import is capped at a handful of pages.
   Whole-play import would need a genuinely different strategy (splitting
@@ -153,19 +226,16 @@ do; it has to be a real one to actually import a PDF).
 - **One plain-text script format today.** Pasted text only understands
   the `CHARACTER:` colon convention; a name centered alone on its own line
   isn't recognized as starting a new cue (though the AI-assisted PDF path
-  _can_ handle that layout). Fountain, DOCX, and other formats aren't
-  supported yet, but the architecture was specifically designed so adding
-  a new one is a contained addition, not a rewrite of the comparison
-  logic.
+  _can_ handle that layout). Fountain, DOCX, Final Draft, and other
+  formats aren't supported yet, but the architecture was specifically
+  designed so adding a new one is a contained addition, not a rewrite of
+  the comparison logic.
 - **The line-pairing heuristic is intentionally simple.** When lines are
   dropped in one place and added in another nearby, Stage Assist has to
   guess whether that's really one paraphrased line or two unrelated ones.
   It uses a cheap, fast heuristic (shared vocabulary) rather than a full
   similarity model, and it has known, deliberately-accepted edge cases
-  where it guesses wrong. A future semantic pass (using Claude to
-  adjudicate just the ambiguous cases) is a plausible next step, but it
-  would only ever narrow this heuristic's blind spots, never replace the
-  deterministic comparison itself.
+  where it guesses wrong.
 - **Persistence is scoped to named, confirmed scripts only.** Saving a
   reviewed script to the library is the one thing that survives a refresh
   or even a server restart. Everything else still doesn't: a transcript,
@@ -177,28 +247,11 @@ do; it has to be a real one to actually import a PDF).
   (auth, storage, hosting) is future scope, not something this project
   has attempted.
 
-## Where this could go next
+## Roadmap
 
-A few directions that would be natural extensions of what's here, roughly
-in order of how well they fit the existing architecture:
-
-- **Semantic line-pairing.** Use Claude to resolve the ambiguous cases the
-  deterministic pairing heuristic gets wrong today — always as a second
-  opinion on candidates the deterministic pass already found, never as a
-  replacement for it.
-- **More script formats.** Fountain (a plain-text screenwriting standard)
-  would be the most natural second format to support, since it's still
-  plain text with its own conventions.
-- **Whole-script PDF import.** Chunking a longer document across multiple
-  AI calls and reassembling the result, building on the same review-
-  before-trust pattern already in place for short excerpts.
-- **Accounts and a real multi-user backend.** A first, deliberately small
-  slice of persistence already exists (a local, named script library —
-  see above), but it's a single local file with no login and no concept
-  of separate users. Saving transcripts and past comparison results, and
-  supporting more than one person's library, remain the real unbuilt
-  next step here.
-- **Claude-authored note phrasing.** Once a diff is computed, a short
-  natural-language note ("you dropped the second half of this line") could
-  be more useful to an actor than a raw word-level diff — again, narrating
-  a result the deterministic engine already produced, not replacing it.
+The full picture — the technical challenges this problem breaks down
+into, why each one is hard, which are solved, how the remaining work is
+phased and what depends on what, an honest MVP definition, and the
+biggest open risks (character attribution from audio chief among them) —
+lives in [`ROADMAP.md`](./ROADMAP.md). This README tells the story of
+what exists; that document tells the story of where it's going and why.
