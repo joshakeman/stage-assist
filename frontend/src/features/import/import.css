@@ -16,7 +16,8 @@
 }
 
 .pdf-upload-form button,
-.script-import-actions button {
+.script-import-actions button,
+.script-import-save button {
   font-size: 16px;
   padding: 8px 20px;
   border-radius: 6px;
@@ -28,11 +29,13 @@
 }
 
 .pdf-upload-form button:hover,
-.script-import-actions button:hover {
+.script-import-actions button:hover,
+.script-import-save button:hover {
   border-color: var(--accent-border);
 }
 
-.pdf-upload-form button:disabled {
+.pdf-upload-form button:disabled,
+.script-import-save button:disabled {
   cursor: default;
   opacity: 0.6;
 }
@@ -123,6 +126,29 @@
   color: var(--text) !important;
 }
 
+.script-import-save {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin-top: 16px;
+}
+
+.script-import-save input[type="text"] {
+  font: inherit;
+  font-size: 14px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text-h);
+  min-width: 260px;
+}
+
+.script-import-save-confirmation {
+  color: #15803d;
+  font-size: 14px;
+}
+
 @media (prefers-color-scheme: dark) {
   .script-preview-flag {
     color: #fca5a5;
@@ -131,5 +157,9 @@
 
   .script-preview-row--unverified {
     background: rgba(248, 113, 113, 0.06);
+  }
+
+  .script-import-save-confirmation {
+    color: #86efac;
   }
 }

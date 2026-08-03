@@ -13,7 +13,18 @@ import (
 	"github.com/joshakeman/stage-assist/backend/internal/aiparse"
 	"github.com/joshakeman/stage-assist/backend/internal/api"
 	"github.com/joshakeman/stage-assist/backend/internal/domain"
+	"github.com/joshakeman/stage-assist/backend/internal/library"
 )
+
+func newTestStore(t *testing.T) *library.Store {
+	t.Helper()
+	store, err := library.NewStore(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { store.Close() })
+	return store
+}
 
 func multipartUpload(t *testing.T, fieldName, filePath string) (*bytes.Buffer, string) {
 	t.Helper()
@@ -43,7 +54,7 @@ func doImport(t *testing.T, interpreter aiparse.ScriptInterpreter, fieldName, fi
 	req := httptest.NewRequest(http.MethodPost, "/api/scripts/import", body)
 	req.Header.Set("Content-Type", contentType)
 	rec := httptest.NewRecorder()
-	api.NewMux(interpreter).ServeHTTP(rec, req)
+	api.NewMux(interpreter, newTestStore(t)).ServeHTTP(rec, req)
 	return rec
 }
 
@@ -153,7 +164,7 @@ func TestHandleScriptImportRejectsUploadsOverTheSizeLimit(t *testing.T) {
 func TestHandleScriptImportWrongMethodIsRejected(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/scripts/import", nil)
 	rec := httptest.NewRecorder()
-	api.NewMux(&aiparse.FakeInterpreter{}).ServeHTTP(rec, req)
+	api.NewMux(&aiparse.FakeInterpreter{}, newTestStore(t)).ServeHTTP(rec, req)
 	if rec.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusMethodNotAllowed)
 	}

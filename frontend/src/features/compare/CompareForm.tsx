@@ -6,10 +6,17 @@ import "./compare.css";
 
 interface CompareFormProps {
   importedElements: ConfirmedElement[] | null;
+  loadedScriptName?: string | null;
   onClearImportedElements: () => void;
+  onReReview?: () => void;
 }
 
-export function CompareForm({ importedElements, onClearImportedElements }: CompareFormProps) {
+export function CompareForm({
+  importedElements,
+  loadedScriptName,
+  onClearImportedElements,
+  onReReview,
+}: CompareFormProps) {
   const [script, setScript] = useState("");
   const [transcript, setTranscript] = useState("");
   const [character, setCharacter] = useState("");
@@ -46,10 +53,25 @@ export function CompareForm({ importedElements, onClearImportedElements }: Compa
             Script
             <p className="compare-imported-summary">
               Using {importedElements.length} confirmed line
-              {importedElements.length === 1 ? "" : "s"} from the PDF import.{" "}
+              {importedElements.length === 1 ? "" : "s"}{" "}
+              {loadedScriptName ? (
+                <>
+                  from "{loadedScriptName}".
+                </>
+              ) : (
+                "from the PDF import."
+              )}{" "}
               <button type="button" className="link-button" onClick={onClearImportedElements}>
                 Clear and paste text instead
               </button>
+              {onReReview && (
+                <>
+                  {" "}
+                  <button type="button" className="link-button" onClick={onReReview}>
+                    Re-review these lines
+                  </button>
+                </>
+              )}
             </p>
           </div>
         ) : (

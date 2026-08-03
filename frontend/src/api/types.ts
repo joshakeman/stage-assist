@@ -1,8 +1,9 @@
 // Hand-written to mirror backend/internal/api/handlers.go's JSON DTOs
-// (compareRequest / compareResponse / lineNoteDTO / wordDiffDTO) and
-// import.go's DTOs (candidateElementDTO / importResponse). There is no
-// codegen/OpenAPI step in this slice, so this file can drift from the Go
-// contract — check it whenever handlers.go's or import.go's DTOs change.
+// (compareRequest / compareResponse / lineNoteDTO / wordDiffDTO),
+// import.go's DTOs (candidateElementDTO / importResponse), and library.go's
+// DTOs (savedScriptSummaryDTO / savedScriptDTO). There is no codegen/OpenAPI
+// step in this slice, so this file can drift from the Go contract — check
+// it whenever those files' DTOs change.
 
 export type CueStatus = "exact" | "changed" | "missing" | "extra";
 
@@ -67,4 +68,23 @@ export interface CompareRequest {
 export interface CompareResponse {
   character: string;
   notes: LineNote[];
+}
+
+// The lightweight shape for browsing the saved-script library -- no
+// elements, so the list doesn't require shipping every saved script's
+// full content over the wire.
+export interface SavedScriptSummary {
+  id: string;
+  name: string;
+  createdAt: string;
+  elementCount: number;
+}
+
+// The full shape for one saved script, used both to load it straight into
+// a comparison and to re-open it for review.
+export interface SavedScript {
+  id: string;
+  name: string;
+  createdAt: string;
+  elements: ConfirmedElement[];
 }

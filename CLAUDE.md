@@ -123,6 +123,47 @@ text is user-controlled and adversarial-input-shaped. This is defense in
 depth, not the primary defense — grounding is: even a prompt-injected
 response still has to survive `Verify` against the real extracted text.
 
+### Saved script library
+
+A user can name and save a script's confirmed elements so they can come
+back to it later without re-uploading the PDF or paying for another AI
+pass — motivated directly by real cost (a real 5-page import cost about
+$0.07) and by the AI interpretation step's non-determinism (see "AI
+response reliability" below): the same PDF can come back slightly
+differently structured on a second call, so reloading a saved,
+already-reviewed result is also the only way to get the *exact same*
+structure back, not just an equivalent one.
+
+This is a fourth way to reach the same confirmed-elements shape the
+compare pipeline already consumes — not a new code path into
+`domain.Script`. `internal/library.Store` persists exactly
+`ConfirmedElement`'s shape (`{kind, character, text}`, plus a name and
+timestamp) in a local SQLite file (`backend/scripts.db`, gitignored,
+matching the existing flat-file-in-`backend/` convention `.env` and
+`usage.jsonl` already use). Loading a saved script back still goes
+through the *same* `elements` branch of the `scriptSource` tagged union
+that a fresh PDF-import confirmation uses — `CompareForm` has never known
+or cared where `ConfirmedElement[]` came from, and that stays true here.
+
+Two distinct actions after loading, both without any Anthropic call:
+**Load** skips straight to a usable comparison (the content was already
+human-reviewed once, so re-reviewing by default would be friction for no
+benefit); **Re-review** reopens the exact same editable preview table
+used during import, seeded from the saved elements instead of a fresh
+`ImportResponse` — the table's `Page`/`Verified` columns get harmless
+defaults (`page: 0` → "page unknown", `verified: true`) since those
+signals never really applied to reloaded content in the first place (they
+meant "Go's grounding check passed against the original PDF," which
+didn't run again on a reload) — this is a deliberate repurposing of those
+fields for display, not a claim that grounding actually happened.
+
+**Why `library.Store` has no interface**, extending the same
+`pdftext`/`aiparse` contrast under "Avoid speculative abstractions"
+below: a real `*Store` in tests is local, fast, and deterministic — SQLite
+even supports an in-memory database (`:memory:`, or shared-cache mode for
+concurrent-access tests) — so there's no slow, costly, non-deterministic
+call for a fake to buy speed against. Tests just use a real `*Store`.
+
 ## Error handling: distinguish root causes, don't collapse them
 
 When a request can fail for genuinely different reasons, give each one its
@@ -177,25 +218,34 @@ code path is otherwise the same.
   (per-call token/cost logging — see Commands). Turns raw extracted text
   into a candidate structure; never touches `internal/domain`'s
   comparison types.
+- `backend/internal/library` — `library.go` (`Store`, `SavedScript`,
+  `Element`, `ErrNotFound`). Persists named, confirmed scripts in a local
+  SQLite file. No notion of PDFs, AI, or grounding; no interface (a real
+  `*Store` in tests is local, fast, and deterministic — see "Avoid
+  speculative abstractions").
 - `backend/internal/api` — `handlers.go` (JSON DTOs, `HandleCompare`,
   `NewMux`, the `scriptSource` tagged union, confirmed-elements-to-`Script`
-  conversion), `import.go` (`handleScriptImport`, the PDF upload endpoint).
-  Translates between the wire format and `internal/domain`/`internal/aiparse`;
+  conversion), `import.go` (`handleScriptImport`, the PDF upload endpoint),
+  `library.go` (the saved-script-library endpoints). Translates between
+  the wire format and `internal/domain`/`internal/aiparse`/`internal/library`;
   owns validation judgment calls domain functions don't make (e.g.
   rejecting a character absent from the *script* as user error, while
   a character absent from the *transcript* is a valid all-missing result).
 - `frontend/src/api` — `types.ts` (hand-written mirror of the Go JSON
   contract — no codegen, so it can drift; check it when `handlers.go`'s
-  DTOs change), `compareApi.ts` / `importApi.ts` (the only places that call
-  `fetch`).
+  DTOs change), `compareApi.ts` / `importApi.ts` / `savedScriptsApi.ts`
+  (the only places that call `fetch`).
 - `frontend/src/features/compare` — the compare form, result rendering
   (`LineNotesList`/`LineNoteRow`/`WordDiffText`), and `useCompare` (async
   request lifecycle).
 - `frontend/src/features/import` — `PdfUploadForm.tsx` (file upload),
   `ScriptPreviewTable.tsx` (editable per-row review: relabel kind,
   edit/delete, `Verified: false` flagged), `ScriptImport.tsx` (ties upload
-  → preview → confirm together), `useImport` (async request lifecycle,
+  → preview → confirm together, plus the inline "save to library"
+  control), `useImport`/`useSaveScript` (async request lifecycles,
   mirroring `useCompare`).
+- `frontend/src/features/library` — `SavedScriptsList.tsx` (browse/Load/
+  Re-review/Delete), `useSavedScripts` (fetch-on-mount + `refresh()`).
 
 ## Commands
 
@@ -223,6 +273,12 @@ Backend (from `backend/`; `go` may need `/usr/local/go/bin` on `PATH`):
   Console's own usage dashboard is the authoritative source for actual
   spend; this file exists to correlate cost with specific app-level calls,
   which the Console can't do.
+- Saved scripts live in `backend/scripts.db` (gitignored, a real SQLite
+  file — created on first save, relative to the process's working
+  directory, same convention as `.env`/`usage.jsonl`). Inspect it directly
+  with `sqlite3 scripts.db "select id, name, created_at from saved_scripts"`
+  if the `sqlite3` CLI is available, or just use the app's own
+  `GET /api/scripts/saved` endpoint.
 
 Frontend (from `frontend/`):
 - Run: `npm run dev` (proxies `/api` to `localhost:8080`, see
@@ -275,6 +331,15 @@ third-party library: it's local, fast, and deterministic, so its one call
 site can have its library swapped with zero interface needed. The
 lesson generalizes: an interface is for a *testing or deployment* boundary
 that actually needs one, not for "this wraps an external package."
+
+`internal/library.Store` is a second worked example on the no-interface
+side, and a different kind of dependency than `pdftext`'s (a real
+database, not a parsing library) — showing this isn't just about
+"parsing libraries don't need interfaces," it's about the call itself
+being local, fast, and deterministic regardless of what the dependency
+is. A real `*Store` in tests is exactly that (SQLite even offers an
+in-memory mode for zero filesystem I/O), so tests use one directly
+instead of a fake.
 
 ## Known limitation: the cue-pairing heuristic in `align.go`
 
@@ -477,10 +542,14 @@ designed to be.
   anagram of its evidence's would pass. Same category of accepted,
   narrow heuristic limitation as `align.go`'s pairing gate above; not
   tightened without a concrete case motivating it.
-- **No persistence across a page refresh during import review.** Confirmed
-  elements only exist in React state until handed to the compare form;
-  reloading loses an in-progress review. Flagged in the UI, not fixed —
-  there's no persistence layer anywhere else in this project either.
+- **An *in-progress, unsaved* review still isn't persisted across a page
+  refresh.** Candidate elements only exist in React state until either
+  confirmed (handed to the compare form) or explicitly saved to the
+  library; reloading mid-review loses that work either way. Flagged in
+  the UI, not fixed. This is narrower than it used to be: a *saved*
+  script (see "Saved script library" above) does survive a refresh or a
+  full server restart — it's specifically the unsaved, mid-review state
+  that has no persistence, not the app as a whole anymore.
 - **`Page` is where evidence *starts*, not necessarily where it's fully
   contained.** `findEvidencePage` (`verify.go`) searches the whole
   document's text as one continuous string specifically so a line or

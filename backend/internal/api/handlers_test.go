@@ -15,7 +15,7 @@ func doCompare(t *testing.T, method, body string) *httptest.ResponseRecorder {
 	t.Helper()
 	req := httptest.NewRequest(method, "/api/compare", strings.NewReader(body))
 	rec := httptest.NewRecorder()
-	api.NewMux(&aiparse.FakeInterpreter{}).ServeHTTP(rec, req)
+	api.NewMux(&aiparse.FakeInterpreter{}, newTestStore(t)).ServeHTTP(rec, req)
 	return rec
 }
 

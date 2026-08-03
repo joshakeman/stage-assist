@@ -89,6 +89,13 @@ do; it has to be a real one to actually import a PDF).
   is editable, deletable, and flagged if it couldn't be confirmed against
   the source document, so nothing gets into a comparison without a human
   saying so.
+- A named library for scripts you've already imported and reviewed: save
+  one once, and come back to it later without re-uploading the PDF or
+  paying for another AI pass — a real, non-trivial saving, since each
+  real import costs a small but real amount in AI usage. Loading skips
+  straight to a usable comparison; re-opening the same familiar review
+  table for a second look never re-calls the AI either, since the
+  reviewed content is already saved locally.
 
 **Known gaps, by design (not oversights):**
 - **Short excerpts only.** PDF import is capped at a handful of pages.
@@ -113,10 +120,13 @@ do; it has to be a real one to actually import a PDF).
   adjudicate just the ambiguous cases) is a plausible next step, but it
   would only ever narrow this heuristic's blind spots, never replace the
   deterministic comparison itself.
-- **No persistence.** Nothing is saved anywhere — not a script, not a
-  transcript, not a completed comparison, not an in-progress PDF import.
-  Refresh the page and it's gone. There's no login, no accounts, no
-  database.
+- **Persistence is scoped to named, confirmed scripts only.** Saving a
+  reviewed script to the library is the one thing that survives a refresh
+  or even a server restart. Everything else still doesn't: a transcript,
+  a completed comparison, and an *in-progress, unsaved* PDF review are
+  all gone the moment you reload the page. There's no login, no
+  accounts, and no support for more than one person's library — it's a
+  single local file, not a real multi-user backend.
 - **No deployment story.** This runs locally, for now. Taking it further
   (auth, storage, hosting) is future scope, not something this project
   has attempted.
@@ -136,9 +146,12 @@ in order of how well they fit the existing architecture:
 - **Whole-script PDF import.** Chunking a longer document across multiple
   AI calls and reassembling the result, building on the same review-
   before-trust pattern already in place for short excerpts.
-- **Persistence and accounts.** Saving scripts, transcripts, and past
-  comparisons across sessions — the biggest architectural addition on
-  this list, since nothing like it exists yet.
+- **Accounts and a real multi-user backend.** A first, deliberately small
+  slice of persistence already exists (a local, named script library —
+  see above), but it's a single local file with no login and no concept
+  of separate users. Saving transcripts and past comparison results, and
+  supporting more than one person's library, remain the real unbuilt
+  next step here.
 - **Claude-authored note phrasing.** Once a diff is computed, a short
   natural-language note ("you dropped the second half of this line") could
   be more useful to an actor than a raw word-level diff — again, narrating

@@ -9,6 +9,7 @@ import (
 
 	"github.com/joshakeman/stage-assist/backend/internal/aiparse"
 	"github.com/joshakeman/stage-assist/backend/internal/api"
+	"github.com/joshakeman/stage-assist/backend/internal/library"
 )
 
 func main() {
@@ -22,7 +23,13 @@ func main() {
 	}
 	interpreter := aiparse.NewAnthropicInterpreter(apiKey)
 
-	mux := api.NewMux(interpreter)
+	store, err := library.NewStore("scripts.db")
+	if err != nil {
+		log.Fatalf("opening saved-script library: %v", err)
+	}
+	defer store.Close()
+
+	mux := api.NewMux(interpreter, store)
 	log.Println("listening on :8080")
 	log.Fatal(http.ListenAndServe(":8080", mux))
 }

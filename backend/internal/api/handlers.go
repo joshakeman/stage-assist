@@ -9,25 +9,33 @@ import (
 
 	"github.com/joshakeman/stage-assist/backend/internal/aiparse"
 	"github.com/joshakeman/stage-assist/backend/internal/domain"
+	"github.com/joshakeman/stage-assist/backend/internal/library"
 )
 
 // server holds the dependencies handlers need beyond what a plain function
-// can express -- currently just the AI interpreter the import endpoint
-// calls. HandleCompare needs no such dependency (the transcript side is
-// always plain text) so it stays a free function.
+// can express -- the AI interpreter the import endpoint calls, and the
+// store the saved-script-library endpoints use. HandleCompare needs
+// neither (the transcript side is always plain text) so it stays a free
+// function.
 type server struct {
 	interpreter aiparse.ScriptInterpreter
+	store       *library.Store
 }
 
 // NewMux builds the application's routing table. It exists so cmd/server
 // and this package's tests share exactly one definition of the routes.
-// interpreter is injected so tests can supply aiparse.FakeInterpreter
-// instead of making real network calls.
-func NewMux(interpreter aiparse.ScriptInterpreter) *http.ServeMux {
-	s := &server{interpreter: interpreter}
+// interpreter and store are injected so tests can supply
+// aiparse.FakeInterpreter and an in-memory *library.Store instead of a
+// real network call or a real on-disk file.
+func NewMux(interpreter aiparse.ScriptInterpreter, store *library.Store) *http.ServeMux {
+	s := &server{interpreter: interpreter, store: store}
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /api/compare", HandleCompare)
 	mux.HandleFunc("POST /api/scripts/import", s.handleScriptImport)
+	mux.HandleFunc("GET /api/scripts/saved", s.handleListSavedScripts)
+	mux.HandleFunc("POST /api/scripts/saved", s.handleSaveScript)
+	mux.HandleFunc("GET /api/scripts/saved/{id}", s.handleGetSavedScript)
+	mux.HandleFunc("DELETE /api/scripts/saved/{id}", s.handleDeleteSavedScript)
 	return mux
 }
 

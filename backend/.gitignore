@@ -1,3 +1,4 @@
 .env
 .env.local
 usage.jsonl
+scripts.db*
