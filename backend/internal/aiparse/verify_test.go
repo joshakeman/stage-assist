@@ -111,6 +111,38 @@ func TestVerifyTreatesSmartQuotesAndDashesAsEquivalent(t *testing.T) {
 	}
 }
 
+// Regression test for a real finding during manual testing: a Hermia
+// speech in a real script excerpt legitimately spanned a physical page
+// break, and was wrongly reported as unverified because grounding checked
+// each page's text in isolation instead of the whole document. The
+// trailing "2" mirrors the real fixture exactly: a printed page-footer
+// number that PDF extraction picks up as the page's last token, sitting
+// right at the join point.
+func TestVerifyFindsEvidenceSpanningAPageBreak(t *testing.T) {
+	script := aiparse.CandidateScript{Elements: []aiparse.CandidateElement{
+		{
+			Kind:           domain.KindDialogue,
+			Character:      "HERMIA",
+			Text:           "I do entreat your grace to pardon me, but I beseech your grace that I may know.",
+			SourceEvidence: "I do entreat your grace to pardon me,\nBut I beseech your grace that I may know.",
+		},
+	}}
+
+	got, err := aiparse.Verify(script, pages(
+		"HERMIA: I do entreat your grace to pardon me,\n2",
+		"But I beseech your grace that I may know.",
+	))
+	if err != nil {
+		t.Fatalf("Verify: %v", err)
+	}
+	if !got.Elements[0].Verified {
+		t.Error("Verified = false, want true: evidence spanning a page break (past a page-footer number) should still be found")
+	}
+	if got.Elements[0].Page != 1 {
+		t.Errorf("Page = %d, want 1 (the page the evidence starts on)", got.Elements[0].Page)
+	}
+}
+
 func TestVerifyReturnsErrNothingVerifiedWhenEverythingFails(t *testing.T) {
 	script := aiparse.CandidateScript{Elements: []aiparse.CandidateElement{
 		{Kind: domain.KindDialogue, Character: "HAMLET", Text: "made up line", SourceEvidence: "not in the source at all"},

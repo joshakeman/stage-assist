@@ -24,7 +24,7 @@ type CandidateElement struct {
 	Character      string // set only when Kind == domain.KindDialogue
 	Text           string // cleaned candidate content, shown to the user
 	SourceEvidence string // the span of raw text this was derived from
-	Page           int    // which page SourceEvidence was found on
+	Page           int    // page SourceEvidence starts on (0 if not found at all -- it may continue onto a later page)
 	Verified       bool   // whether Go could confirm SourceEvidence against the source
 }
 

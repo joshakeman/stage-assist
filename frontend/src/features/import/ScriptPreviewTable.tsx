@@ -63,7 +63,7 @@ export function ScriptPreviewTable({ rows, onChangeRow, onDeleteRow }: ScriptPre
                 rows={2}
               />
             </td>
-            <td className="script-preview-page">p.{row.page}</td>
+            <td className="script-preview-page">{row.page > 0 ? `p.${row.page}` : "page unknown"}</td>
             <td>
               {!row.verified && (
                 <span className="script-preview-flag" title="Could not be verified against the source document">

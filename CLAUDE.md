@@ -388,3 +388,18 @@ case and touches the wire contract. Revisit if real usage shows it matters.
   elements only exist in React state until handed to the compare form;
   reloading loses an in-progress review. Flagged in the UI, not fixed —
   there's no persistence layer anywhere else in this project either.
+- **`Page` is where evidence *starts*, not necessarily where it's fully
+  contained.** `findEvidencePage` (`verify.go`) searches the whole
+  document's text as one continuous string specifically so a line or
+  speech spanning a physical page break can still verify — found via
+  manual testing with a real script, where a Hermia speech split across
+  two pages was wrongly reported as unverified before this fix. One
+  related, narrower artifact this required handling: PDF exports often
+  leave a printed page-footer number as the last extracted token on a
+  page, which would otherwise wedge itself between two pages' real
+  content at the exact join point; `stripTrailingPageNumber` strips a
+  short, standalone trailing digit run per page before joining, for
+  cross-page search only. Still-accepted, narrower limitation: a
+  hyphenated word split exactly at a page boundary (not a mid-page
+  line-wrap, which already rejoins) won't be rejoined, since page-number
+  attribution requires normalizing each page separately before joining.
