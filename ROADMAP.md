@@ -326,10 +326,13 @@ grounding and review, exactly like PDF parsing today:**
   noise, actors moving relative to a mic, overlapping dialogue. Needs
   validating against a real recording from a real rehearsal before
   committing to an ASR/diarization approach.
-- **Cost profile changes substantially.** A multi-hour rehearsal
-  recording is a very different cost shape than a short PDF excerpt.
-  The usage-tracking work already done is the right foundation to
-  extend here, but the actual numbers need modeling before committing.
+- **Cost profile changes substantially, though not in the direction it
+  first appears.** A multi-hour rehearsal recording is a very different
+  cost shape than a short PDF excerpt — but real numbers show the
+  audio-to-text part of that is actually cheap. The real cost risk is
+  concentrated in one specific piece of the pipeline, and it depends
+  entirely on how that piece gets architected. See section 10 for the
+  detail and the concrete design principles that follow from it.
 - **Turnaround time is part of the actual requirement**, not a nice-to-
   have — the value proposition is "notes before the next rehearsal." If
   processing a rehearsal takes longer than the gap between rehearsals,
@@ -342,7 +345,71 @@ grounding and review, exactly like PDF parsing today:**
   plain text are actually what shows up in practice, versus Final
   Draft files, Word docs, or annotated hand-me-down scripts.
 
-## 10. What this means for right now
+## 10. Cost as a design constraint, not an afterthought
+
+A real 5-page PDF import costs roughly $0.01–0.07 (measured, via
+`usage.jsonl` — see `CLAUDE.md`'s "AI response reliability" section).
+That's small per import, but not trivial multiplied across many users,
+and it's the reference point for reasoning about the audio pipeline,
+which will process far more content per unit of work.
+
+**The actual numbers, checked rather than assumed:** dedicated
+speech-to-text APIs (AssemblyAI, Deepgram, and similar) price
+transcription and diarization at roughly $0.004–$0.01 per minute of
+audio, often bundled together. For a 2-hour rehearsal, that's
+**roughly $0.50–$1.20** — genuinely cheap, because these are
+commoditized, purpose-built, non-generative-AI-tier services priced by
+the minute, not by token. This is the *less* risky part of the audio
+pipeline's cost, contrary to first instinct.
+
+**The real cost risk is concentrated in character attribution
+specifically, and it depends entirely on how it's architected — not on
+whether audio is involved at all:**
+
+- **Naive version:** one Claude call per ambiguous utterance. A 2-hour
+  rehearsal easily has 500–1,000+ lines; per-call overhead (system
+  prompt, schema, any re-sent context) repeated at that volume adds up
+  fast, and could plausibly exceed the transcription cost by a wide
+  margin.
+- **Architected the way this codebase's PDF pipeline already proves
+  out:** one call per scene, not per line — batching many ambiguous
+  segments into a single structured request, exactly like PDF import
+  already sends a whole excerpt in one call rather than one call per
+  cue (see `aiparse.AnthropicInterpreter.InterpretScript`). Same
+  lesson, not a new one.
+
+**Concrete design principles that follow from this, to apply when Phase
+4 actually gets built:**
+
+1. **Resolve the easy majority deterministically before ever calling
+   Claude.** Most of a rehearsal is an actor saying something close to
+   their actual line. The alignment engine that already exists
+   (`internal/domain`'s `Align`, word-overlap matching) can likely
+   match most transcribed segments against expected script lines at
+   zero AI cost, the same instinct behind PDF import's grounding check
+   — cheap deterministic checks first, AI judgment reserved for the
+   genuinely ambiguous residual (overlapping dialogue, off-book
+   paraphrasing, unclear speaker boundaries). This is the audio-pipeline
+   version of the boundary already drawn in section 8.
+2. **Batch AI calls per scene or per rehearsal, never per line** —
+   direct extension of the pattern PDF import already uses.
+3. **Use Anthropic's Batch API for anything not time-sensitive** — a
+   50% discount on both input and output tokens. Rehearsal processing
+   has real slack (notes need to be ready before the *next* rehearsal,
+   not instantly), so there's no reason to pay for synchronous
+   processing. Applies to PDF import too, and isn't used anywhere in
+   this project yet.
+4. **Extend `usage.jsonl` to model cost per rehearsal, not just per
+   call**, before committing to an approach — the same measure-before-
+   deciding discipline that produced the real PDF numbers above, not a
+   new practice.
+5. **Scope the MVP audio pipeline narrowly on purpose** — process one
+   scene or act at a time initially, the same way PDF import is capped
+   at short excerpts rather than whole plays, both to bound cost and to
+   reduce the technical risk of the hardest unsolved piece
+   (attribution) while the approach is still being validated.
+
+## 11. What this means for right now
 
 Nothing here says "stop and rebuild everything." It says: the next
 highest-leverage investment is a research spike into audio transcription
@@ -351,4 +418,7 @@ roadmap depends on that has no existing solution to lean on — rather
 than continuing to round out the script-ingestion side, which is already
 comparatively mature. Format coverage, persistence polish, and accounts
 are all real, but they're not what's standing between this project and
-its actual stated vision.
+its actual stated vision. That same spike should settle the cost
+question from section 10 at the same time, not as a separate pass — the
+attribution approach chosen and its cost shape are the same decision,
+not two.
