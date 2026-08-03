@@ -266,13 +266,19 @@ Backend (from `backend/`; `go` may need `/usr/local/go/bin` on `PATH`):
 - Lint/format: `go vet ./...`, `gofmt -l .`
 - Build: `go build ./...`
 - Check estimated AI spend so far: every real Anthropic call appends one
-  JSON line to `backend/usage.jsonl` (gitignored, created on first real
-  call, relative to wherever the server/test process's working directory
-  is — see `usage.go`). Total estimated cost: `jq -s 'map(.estimated_cost_usd) | add' usage.jsonl`.
-  This is an estimate against list price, not a bill — the Anthropic
-  Console's own usage dashboard is the authoritative source for actual
-  spend; this file exists to correlate cost with specific app-level calls,
-  which the Console can't do.
+  JSON line to `usage.jsonl` (gitignored, created on first real call,
+  relative to wherever the calling process's working directory is — see
+  `usage.go`). Concretely, this means two different files in practice:
+  running the real server writes to `backend/usage.jsonl`, but running a
+  real-API test via `go test` writes to
+  `backend/internal/aiparse/usage.jsonl` instead, since `go test` sets
+  its working directory to the package under test, not `backend/`. Check
+  whichever one is relevant to what you just ran. Total estimated cost:
+  `jq -s 'map(.estimated_cost_usd) | add' usage.jsonl`. This is an
+  estimate against list price, not a bill — the Anthropic Console's own
+  usage dashboard is the authoritative source for actual spend; this file
+  exists to correlate cost with specific app-level calls, which the
+  Console can't do.
 - Saved scripts live in `backend/scripts.db` (gitignored, a real SQLite
   file — created on first save, relative to the process's working
   directory, same convention as `.env`/`usage.jsonl`). Inspect it directly
