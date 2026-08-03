@@ -5,6 +5,13 @@ produces "line notes" — feedback showing an actor where their delivered
 lines diverged from the script. Also a portfolio project for practicing
 idiomatic Go + React/TypeScript; code quality matters as much as features.
 
+**Before starting new work in a fresh session, also read
+[`README.md`](./README.md) for the product story (the real-world problem
+this replaces, and what's actually built so far) and
+[`ROADMAP.md`](./ROADMAP.md) for the current strategic priorities and
+phased plan. Unlike this file, neither loads automatically — read them
+explicitly.**
+
 ## Architecture
 
 Go backend (`backend/`, stdlib `net/http`, no framework) + React/TypeScript
