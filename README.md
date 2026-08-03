@@ -172,6 +172,16 @@ actually looked like, rather than just asserting it happened:
   same discipline produced `ROADMAP.md`: stepping back from feature work
   specifically to check it still matched the original product vision,
   rather than letting implementation momentum quietly redefine the goal.
+- **Cost modeled before it became a problem, not after.** Every real AI
+  call is logged with its actual token cost, not just trusted to be
+  cheap — which is what surfaced that a single PDF import has a real,
+  non-trivial price. When the next major phase (processing rehearsal
+  audio) looked like it would obviously cost more, that assumption got
+  checked against real speech-to-text pricing instead of taken on faith
+  — transcription itself turned out to be cheap, and the actual risk
+  (naively calling Claude once per line instead of batching per scene)
+  got identified and designed around in `ROADMAP.md` before a single
+  line of that pipeline exists, not after a surprise bill.
 
 None of this reflects "AI writes the code, human reviews it" so much as
 an ongoing back-and-forth: proposing a design for critique, catching
