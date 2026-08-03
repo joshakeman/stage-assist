@@ -7,12 +7,6 @@ got), and it lines up the two, cue by cue, and shows you exactly what
 changed: a word swapped here, a line dropped there, a whole speech added
 that wasn't in the original.
 
-It's also a personal project for practicing idiomatic Go and React/
-TypeScript, so alongside "does it work," a fair amount of attention here
-has gone into "is it built well" — clear boundaries between pieces,
-deliberate and documented tradeoffs, and tests that pin down behavior
-rather than just checking the happy path.
-
 ## What it does
 
 1. **Bring a script.** Either paste it as plain text (using a simple
@@ -44,7 +38,7 @@ stage only knows about the stage immediately before it: parsing a script
 format has no idea what a "character" is, extracting one character's
 lines has no idea what format the script came from, and comparing two
 sequences of lines has no idea any of that ever happened. That separation
-is what let PDF import get added later as an entirely new *front door* —
+is what let PDF import get added later as an entirely new _front door_ —
 a second way to produce the same internal script representation — without
 touching a single line of the comparison logic itself.
 
@@ -127,6 +121,7 @@ do; it has to be a real one to actually import a PDF).
 ## What it's good at, and what it isn't (yet)
 
 **Solid today:**
+
 - Comparing two plain-text scripts and getting a reliable, explainable
   diff, including handling dropped lines, added lines, and paraphrased
   lines, not just a naive line-by-line zip.
@@ -148,6 +143,7 @@ do; it has to be a real one to actually import a PDF).
   reviewed content is already saved locally.
 
 **Known gaps, by design (not oversights):**
+
 - **Short excerpts only.** PDF import is capped at a handful of pages.
   Whole-play import would need a genuinely different strategy (splitting
   a long document across multiple AI calls and stitching the result back
@@ -157,7 +153,7 @@ do; it has to be a real one to actually import a PDF).
 - **One plain-text script format today.** Pasted text only understands
   the `CHARACTER:` colon convention; a name centered alone on its own line
   isn't recognized as starting a new cue (though the AI-assisted PDF path
-  *can* handle that layout). Fountain, DOCX, and other formats aren't
+  _can_ handle that layout). Fountain, DOCX, and other formats aren't
   supported yet, but the architecture was specifically designed so adding
   a new one is a contained addition, not a rewrite of the comparison
   logic.
@@ -173,7 +169,7 @@ do; it has to be a real one to actually import a PDF).
 - **Persistence is scoped to named, confirmed scripts only.** Saving a
   reviewed script to the library is the one thing that survives a refresh
   or even a server restart. Everything else still doesn't: a transcript,
-  a completed comparison, and an *in-progress, unsaved* PDF review are
+  a completed comparison, and an _in-progress, unsaved_ PDF review are
   all gone the moment you reload the page. There's no login, no
   accounts, and no support for more than one person's library — it's a
   single local file, not a real multi-user backend.
