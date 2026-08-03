@@ -7,6 +7,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/joshakeman/stage-assist/backend/internal/aiparse"
 	"github.com/joshakeman/stage-assist/backend/internal/api"
 )
 
@@ -15,7 +16,13 @@ func main() {
 		log.Fatalf("loading .env: %v", err)
 	}
 
-	mux := api.NewMux()
+	apiKey := os.Getenv("ANTHROPIC_API_KEY")
+	if apiKey == "" {
+		log.Fatal("ANTHROPIC_API_KEY is required (set it in backend/.env, see .env.example)")
+	}
+	interpreter := aiparse.NewAnthropicInterpreter(apiKey)
+
+	mux := api.NewMux(interpreter)
 	log.Println("listening on :8080")
 	log.Fatal(http.ListenAndServe(":8080", mux))
 }
