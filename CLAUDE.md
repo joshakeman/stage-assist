@@ -351,6 +351,97 @@ side. Fixing that fully would mean `WordDiffSpan` carrying separate
 script/spoken text for equal spans; not done since it's not the reported
 case and touches the wire contract. Revisit if real usage shows it matters.
 
+## AI response reliability: known failure modes and how they're handled
+
+Every call to Claude in this project carries two distinct kinds of risk:
+the API call itself can fail or behave unexpectedly (truncation, malformed
+tool output, refusal), and even a *successful* call's judgment can be
+imperfect or inconsistent (misclassification, uneven cleanup). These are
+different problems needing different treatment — the first category is
+about how we handle the call, the second is inherent to using an LLM for
+structural judgment at all and can only be mitigated, never eliminated in
+code. This section catalogs both, and for each: is it currently caught
+and given a clear, distinct error, is it a known gap worth fixing, or is
+it inherent and handled architecturally instead.
+
+- **Response truncated mid-generation (`stop_reason: max_tokens`) — fixed,
+  caught explicitly.** A real 5-page excerpt hit this in practice:
+  `maxResponseTokens` (`anthropic.go`) was sized for the single-page
+  smoke-test fixture (4096), far too small for a real excerpt's full
+  structured output, so the response was silently cut off and
+  misreported as a grounding failure. Fixed by raising the limit to
+  16000 (confirmed against the real excerpt) and by checking the API's
+  own `stop_reason` explicitly, before the response is ever parsed,
+  returning a distinct `aiparse.ErrResponseTruncated` with its own
+  message (see "Error handling" above). Accepted residual risk: an
+  unusually dense excerpt right at this slice's own caps (15 pages/20K
+  chars) could still exceed 16000 tokens of structured output — not
+  eliminated, but now caught and communicated clearly rather than
+  misattributed to grounding. Raising the limit further would cross into
+  Anthropic's streaming-required threshold (confirmed empirically: 32000
+  triggered "streaming is required for operations that may take longer
+  than 10 minutes"), which isn't worth the added implementation
+  complexity until this slice actually needs longer documents than it
+  supports today.
+- **Tool input double-encoded as a JSON string — known gap, not yet
+  fixed.** Observed once during manual testing, non-deterministically
+  (the same excerpt succeeded normally on other calls): Claude
+  occasionally wraps its entire answer as an escaped JSON *string*
+  instead of matching the schema's literal array type for `elements` — a
+  known category of forced-tool-use quirk on large structured outputs.
+  Today this fails as a raw `json.Unmarshal` type error inside
+  `parseToolInput`, surfaced only via the generic "AI parsing is
+  temporarily unavailable; please try again" message
+  (`internal/api/import.go`), not something specific. This is
+  improvable: `parseToolInput` could detect that shape (the decoded
+  value is a string, not an object) and recursively parse it as a
+  fallback before giving up. Not yet done — flagged here as the next
+  concrete thing worth fixing in this area.
+- **Model refusal (`stop_reason: refusal`) — known gap, not yet
+  handled.** The Anthropic SDK defines this stop reason, but
+  `InterpretScript` doesn't check for it distinctly; today it would fall
+  through to the generic "response did not include a
+  submit_script_structure tool call" error. Not observed in practice
+  (public-domain/theatrical script content isn't typically
+  refusal-triggering) and not added preemptively — consistent with this
+  project's avoid-speculative-abstractions stance, this is worth adding
+  explicit handling for if it's ever actually seen, not before.
+- **Misclassification (`kind`/`character` judgment) — inherent, not
+  fixable in code.** `Verify` confirms `SourceEvidence` is real text from
+  the document and that `Text` is substantially consistent with it — it
+  says nothing about whether Claude's structural judgment (is this
+  dialogue or direction? whose line is it?) was *correct*. There's no
+  independent ground truth for "is this classification right" the way
+  there is for "does this text exist in the document," so this can't be
+  validated away. The only correct mitigation is the human review/edit
+  step before confirmation — that's by design, not a gap to close.
+- **Inconsistent cleanup across equivalent content — inherent, same
+  mitigation.** Manual testing found the same document had an inline
+  parenthetical aside stripped from one dialogue line's `Text` but left
+  attached to another, with nothing distinguishing the two that would
+  explain the different treatment. Same root cause as misclassification:
+  a property of the model's own non-deterministic judgment, not a bug in
+  our code — mitigated the same way, by review before use, never treated
+  as a correctness signal to chase.
+- **Aggregate output quality varies call to call — monitored with real
+  data, not tuned preemptively.** There's no percentage-based aggregate
+  rejection threshold beyond "zero elements verified"
+  (`aiparse.ErrNothingVerified`) by design. Stage E's real-API evaluation
+  suite (`aiparse.TestEvalSuite`) checked this with real data: every real
+  fixture came back 100% verified, with no observed "mostly good, some
+  noise" case to motivate a threshold. This could change with more
+  real-world usage; revisit only with concrete contrary evidence, not
+  preemptively.
+
+None of this is correctness-critical, which is the point of the
+pipeline's shape: Claude never decides final content (the "Deterministic
+core" principle above), `Verify` independently checks its claims against
+the source, and a human confirms every row before anything downstream
+ever sees it. Improving reliability further is about reducing *noise* —
+fewer confusing error messages, fewer rows wrongly flagged unverified —
+not about making the system safe to trust blindly, which it was never
+designed to be.
+
 ## Known limitations: PDF ingestion
 
 - **Short excerpts only, no chunking.** `pdftext.MaxPages`/
@@ -361,29 +452,22 @@ case and touches the wire contract. Revisit if real usage shows it matters.
 - **No OCR.** A PDF with no embedded text layer (a scanned page rendered
   as an image) is rejected (`pdftext.ErrNoTextLayer`) rather than attempted
   — out of scope for this slice.
-- **Grounding proves evidence existed and is consistent, not that
-  classification is correct.** `Verify` confirms `SourceEvidence` is real
-  text from the document and that `Text` is substantially the same words —
-  it says nothing about whether Claude's `kind`/`character` judgment was
-  right (e.g. calling a stage direction dialogue, or misattributing a
-  line). That's what the human review step is for, not validation.
+- **A PDF's own font encoding can silently drop letters, unrelated to
+  anything AI or grounding-related.** Found via manual testing: two pages
+  of a real excerpt (a title page and cast list, styled with a decorative
+  font) extracted with specific letters missing entirely — e.g. "Theseus"
+  came out as " eseus," "Titania" as "Ti ania" — because that font's
+  embedded character encoding had no mapping for certain glyphs. This is
+  a property of how the source PDF was authored/exported, not something
+  `pdftext` or any code here can detect or repair; elements sourced from
+  such a page correctly fail verification, since the extracted text
+  genuinely doesn't match those words. Nothing to fix — just something to
+  expect from real, especially decoratively-formatted, source PDFs.
 - **The word-overlap check is a bag-of-words check, not an ordering
   check** (`overlapRatio`, `verify.go`) — text whose words are a real
   anagram of its evidence's would pass. Same category of accepted,
   narrow heuristic limitation as `align.go`'s pairing gate above; not
   tightened without a concrete case motivating it.
-- **No aggregate rejection threshold, and Stage E's real-API evaluation
-  suite (`aiparse.TestEvalSuite`) confirmed this rather than motivating
-  one to be added**: every real fixture came back 100% verified, with no
-  observed "mostly good, some noise" case for a percentage threshold to
-  actually help with. The only aggregate failure condition remains
-  `aiparse.ErrNothingVerified` (literally zero elements verified).
-- **Claude's own cleanup is inconsistent, not just imperfect
-  extraction.** Manual testing found the same document had an inline
-  parenthetical aside stripped from one dialogue line's `Text` but left
-  attached to another, with nothing distinguishing the two that would
-  explain the different treatment — a real behavior quirk to expect in
-  review, not a bug to chase.
 - **No persistence across a page refresh during import review.** Confirmed
   elements only exist in React state until handed to the compare form;
   reloading loses an in-progress review. Flagged in the UI, not fixed —
