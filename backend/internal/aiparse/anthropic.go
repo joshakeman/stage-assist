@@ -94,6 +94,8 @@ func (a *AnthropicInterpreter) InterpretScript(ctx context.Context, pages []pdft
 	if err != nil {
 		return CandidateScript{}, fmt.Errorf("aiparse: calling Anthropic: %w", err)
 	}
+	recordUsage(a.model, message.Usage)
+
 	if message.StopReason == anthropic.StopReasonMaxTokens {
 		return CandidateScript{}, ErrResponseTruncated
 	}

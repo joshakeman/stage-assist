@@ -173,8 +173,9 @@ code path is otherwise the same.
   `CandidateElement`, the `ScriptInterpreter` interface), `anthropic.go`
   (the real Anthropic-backed implementation, prompt, and schema),
   `verify.go` (content-grounding validation), `fake.go`
-  (`FakeInterpreter`, for fast deterministic tests). Turns raw extracted
-  text into a candidate structure; never touches `internal/domain`'s
+  (`FakeInterpreter`, for fast deterministic tests), `usage.go`
+  (per-call token/cost logging — see Commands). Turns raw extracted text
+  into a candidate structure; never touches `internal/domain`'s
   comparison types.
 - `backend/internal/api` — `handlers.go` (JSON DTOs, `HandleCompare`,
   `NewMux`, the `scriptSource` tagged union, confirmed-elements-to-`Script`
@@ -214,6 +215,14 @@ Backend (from `backend/`; `go` may need `/usr/local/go/bin` on `PATH`):
   money and has real latency/non-determinism, so it's never run by default.
 - Lint/format: `go vet ./...`, `gofmt -l .`
 - Build: `go build ./...`
+- Check estimated AI spend so far: every real Anthropic call appends one
+  JSON line to `backend/usage.jsonl` (gitignored, created on first real
+  call, relative to wherever the server/test process's working directory
+  is — see `usage.go`). Total estimated cost: `jq -s 'map(.estimated_cost_usd) | add' usage.jsonl`.
+  This is an estimate against list price, not a bill — the Anthropic
+  Console's own usage dashboard is the authoritative source for actual
+  spend; this file exists to correlate cost with specific app-level calls,
+  which the Console can't do.
 
 Frontend (from `frontend/`):
 - Run: `npm run dev` (proxies `/api` to `localhost:8080`, see
