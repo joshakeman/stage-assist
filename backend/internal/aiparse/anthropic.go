@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	anthropic "github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
@@ -16,6 +17,10 @@ import (
 const (
 	toolName          = "submit_script_structure"
 	maxResponseTokens = 4096
+	// callTimeout bounds every Anthropic call regardless of what the caller
+	// passes in -- context.WithTimeout only tightens an existing deadline,
+	// never loosens one, so this is a safety ceiling, not an override.
+	callTimeout = 60 * time.Second
 )
 
 // systemPrompt states the task, the kind taxonomy, and -- explicitly,
@@ -38,9 +43,8 @@ For every element, also provide "source_evidence": the literal span of the provi
 
 Call the submit_script_structure tool exactly once with the complete structured result.`
 
-// AnthropicInterpreter calls the real Anthropic API. Its output is not
-// trusted as-is by callers -- validation is added in a later stage of this
-// package, not here.
+// AnthropicInterpreter calls the real Anthropic API and validates the
+// result with Verify before returning it -- see InterpretScript.
 type AnthropicInterpreter struct {
 	client anthropic.Client
 	model  anthropic.Model
@@ -57,11 +61,15 @@ func NewAnthropicInterpreter(apiKey string) *AnthropicInterpreter {
 	}
 }
 
-// InterpretScript sends pages to Claude and parses the forced tool-use
-// response into a CandidateScript. It does not validate the result against
-// the source text -- see the grounding validation added alongside the fake
-// implementation in the next stage of this package.
+// InterpretScript sends pages to Claude, parses the forced tool-use
+// response, and validates it with Verify before returning -- callers,
+// including the fake used in tests, always get back a CandidateScript
+// whose Page/Verified fields are already computed, never a raw,
+// unvalidated response.
 func (a *AnthropicInterpreter) InterpretScript(ctx context.Context, pages []pdftext.PageText) (CandidateScript, error) {
+	ctx, cancel := context.WithTimeout(ctx, callTimeout)
+	defer cancel()
+
 	message, err := a.client.Messages.New(ctx, anthropic.MessageNewParams{
 		Model:     a.model,
 		MaxTokens: maxResponseTokens,
@@ -80,7 +88,11 @@ func (a *AnthropicInterpreter) InterpretScript(ctx context.Context, pages []pdft
 		if block.Type != "tool_use" || block.Name != toolName {
 			continue
 		}
-		return parseToolInput(block.Input)
+		candidate, err := parseToolInput(block.Input)
+		if err != nil {
+			return CandidateScript{}, err
+		}
+		return Verify(candidate, pages)
 	}
 	return CandidateScript{}, fmt.Errorf("aiparse: response did not include a %s tool call", toolName)
 }

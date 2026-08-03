@@ -13,10 +13,11 @@ import (
 )
 
 // TestAnthropicInterpreterRealSmoke makes one real call to the Anthropic
-// API. This is the Stage B1 checkpoint: proving the tool-use schema
-// actually round-trips into a usable CandidateScript BEFORE building the
-// fake implementation, grounding validation, and fast test suite around a
-// merely-assumed shape.
+// API. Originally the Stage B1 checkpoint proving the tool-use schema
+// round-trips into a usable CandidateScript; now that InterpretScript also
+// runs Verify (Stage B2), this doubles as confirmation that the grounding
+// logic behaves sensibly against a real response, not just synthetic
+// fixtures.
 //
 // Skipped unless ANTHROPIC_API_KEY is set -- it costs real money and isn't
 // fully deterministic, so it must never be part of the default fast suite.
@@ -53,15 +54,24 @@ func TestAnthropicInterpreterRealSmoke(t *testing.T) {
 		t.Fatal("got zero elements, want at least one")
 	}
 
-	var sawHamletDialogue bool
+	var sawHamletDialogue, sawAnyVerified bool
 	for _, el := range got.Elements {
-		t.Logf("element: kind=%s character=%q text=%q evidence=%q",
-			el.Kind, el.Character, el.Text, el.SourceEvidence)
+		t.Logf("element: kind=%s character=%q text=%q evidence=%q page=%d verified=%v",
+			el.Kind, el.Character, el.Text, el.SourceEvidence, el.Page, el.Verified)
 		if el.Kind == domain.KindDialogue && strings.EqualFold(el.Character, "HAMLET") {
 			sawHamletDialogue = true
+		}
+		if el.Verified {
+			sawAnyVerified = true
+			if el.Page != 1 {
+				t.Errorf("Page = %d, want 1 (this fixture is a single-page PDF)", el.Page)
+			}
 		}
 	}
 	if !sawHamletDialogue {
 		t.Error("expected at least one dialogue element attributed to HAMLET")
+	}
+	if !sawAnyVerified {
+		t.Error("expected at least one element to be Verified against the real extracted text")
 	}
 }
