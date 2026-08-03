@@ -1,36 +1,35 @@
 # Stage Assist
 
-In many theater productions, someone on the backstage staff does this by
-hand, every single rehearsal: records it, listens back to the entire
-recording, compares what was actually said against the script for every
-actor, writes line notes by hand, and emails them out before the next
-rehearsal. None of that is conceptually hard — it's just slow, repetitive,
-and it doesn't scale. Stage Assist exists to automate that workflow,
-starting with the hardest and most valuable part: the comparison itself.
-
-It's also a personal project for practicing idiomatic Go and
-React/TypeScript, so alongside "does it solve the problem," real
-attention has gone into "is it built well" — clear boundaries between
-pieces, deliberate and documented tradeoffs, and tests that pin down
-behavior rather than just checking the happy path.
+The concept for this application came from a friend who manages a Theater company
+here in Atlanta. He wondered if AI could help produce what are called line notes
+for actors, a process that is currently tedious, manual, and time consuming.
+Currently line notes are produced by someone on the theater staff, who will listen to the
+rehearsal and maticulously note each time an actor screws up a line from the script.
+Actors are sent a rehearsal summary with these line notes, so that they can be aware of
+which lines they need to correct before the next rehearsal.
+Stage Assist is meant to automate that workflow.
 
 ## The problem
 
-The manual version of this looks like:
+The two major functions this application needs to accomplish to replace the existing manual process:
 
-1. Record the rehearsal.
-2. Listen back to the *entire* recording, start to finish.
-3. Compare what was actually said against the script, line by line, for
-   every actor.
-4. Write line notes — who dropped a line, who paraphrased, who added
-   something that isn't in the script.
-5. Deliver those notes to the actors, usually by email, ideally before
-   the next rehearsal.
+- Intake a script and parse it so that it can be compared to another set of text (the actual transcribed
+  content of the rehearsal)
+  - This has multiple challenges. Scripts are not generally structured into a reliable digital format.
+    The applicaiton needs to be able to take in a script and distinguish which text is actually a character's line, vs
+    which is stage direction or maybe something else like the play's title or cast list.
+  - If scripts were all available in a well structured, consistent format, then this could be accomplished with
+    determinstic parsing based on whatever data model the format lends itself to. Since we cannot expect consistent
+    structure, this is an opportunity to use AI to make judgments about how to extract elements from a script and
+    filter out the unneccesary bits.
+- Intake an audio recording of a rehearsal and produce a transcript that can be matched to the script
+  - Just as in the first step the application must be able to parse a script into lines and associate those lines
+    to the correct character, so must this step take in audio, faithfully transcribe it, and (most importantly) figure out:
+    - What is dialog vs what can be excluded?
+    - "Who" is saying each line (in this case, which character in the script)
+  - This process of identifying who is saying what in an audio clip is called 'diarization', it's described [here](https://www.assemblyai.com/blog/what-is-speaker-diarization-and-how-does-it-work)
 
-A two-hour rehearsal takes at least two hours to review this way — every
-time, for the entire run of a show. That's the actual bottleneck this
-project exists to remove, not "wouldn't it be nice to have an app for
-this."
+These are the core challenges, and they are genuinely tricky. If solved, there is also of course the challenge of creating an effective and intuitive interface for the application which would, in general, have non-technical users.
 
 ## The vision
 
