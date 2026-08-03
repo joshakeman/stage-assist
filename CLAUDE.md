@@ -54,6 +54,73 @@ phrasing: Claude may rephrase or explain a diff the deterministic engine
 already computed, but it must never be the thing deciding whether two
 lines differ.
 
+### PDF ingestion & AI-assisted parsing
+
+A user can also produce a `domain.Script` by uploading a PDF excerpt
+instead of pasting plain text. This is the project's first real external
+network dependency (Anthropic) and first real binary-parsing dependency
+(PDF), and it slots into the parsing/comparison boundary above as **a
+second way to produce a `Script`** — `ExtractCues`/`Align`/`WordDiff` never
+change and never see anything before a human has confirmed it.
+
+Three tiers, each less trusted than the last:
+
+1. **Raw extracted text** — `pdftext.ExtractText` (`internal/pdftext`)
+   turns uploaded PDF bytes into per-page plain text, or a clear rejection
+   (not a PDF, no text layer, too many pages, too much text). It has no
+   notion of scripts, characters, or AI.
+2. **AI candidate interpretation** — `aiparse.CandidateScript`
+   (`internal/aiparse`) is Claude's structured guess at how that raw text
+   breaks into dialogue/direction/unclassified elements, reusing
+   `domain.ElementKind` but deliberately *not* `domain.ScriptElement` —
+   nothing here is trusted yet. Every element carries two independent,
+   Go-computed trust signals the model never sets directly: `Page` (which
+   page its evidence was actually found on) and `Verified` (see grounding,
+   below). Nothing is ever silently dropped at this tier — an unverified
+   or unclassified element is still returned, just flagged, so a human can
+   decide.
+3. **User-confirmed elements** — after review in the browser, the frontend
+   sends back only `{kind, character, text}` per surviving row (import-time
+   metadata like `Verified`/`Page`/`SourceEvidence` was only ever useful
+   *during* review). `internal/api`'s `scriptFromConfirmedElements`
+   (`handlers.go`) converts these directly into a `domain.Script` — the
+   same type `ParsePlainTextScript` produces — and from there the
+   compare request follows exactly one code path (`ExtractCues` → `Align`)
+   regardless of which tier produced the script. `compareRequest`'s script
+   side is a tagged union (`scriptSourceDTO{Type: "raw"|"elements", ...}`)
+   for this reason: two independently-optional fields would make invalid
+   states ("both set", "neither set") representable, and this project's
+   hand-mirrored TypeScript DTOs make that drift risk real.
+
+**Content grounding** (`aiparse.Verify`, `verify.go`) is what makes an
+element's `Verified` flag meaningful, and it's two independent checks, not
+one — a single "does Claude's claimed excerpt exist in the raw text" check
+is gameable: a real short anchor (e.g. a character's name) could be paired
+with a fully invented line and still pass. So `Verify` requires both:
+(1) **evidence groundedness** — `SourceEvidence` itself must be found in
+some page's raw text, and (2) **text-evidence consistency** — `Text`'s
+content words must overlap `SourceEvidence`'s by at least 70%
+(`textEvidenceOverlapThreshold`). Both checks run against text normalized
+for PDF-extraction artifacts (smart quotes, ligatures, mid-word line-wrap
+hyphens) via the same "compare by normalized content words, not exact
+bytes" approach `internal/domain` already uses for alignment
+(`normalize.go`, `sharesContentWord`) — not a separate scheme invented for
+this package.
+
+**Failure policy is deliberately simple, not tuned aggregate scoring**: an
+import fails only when the response doesn't parse into the expected
+structure at all, or when literally zero elements verify
+(`aiparse.ErrNothingVerified`). There's no percentage-based aggregate
+rejection threshold on top of that, by design — see the known limitations
+below for why real evaluation data ended up confirming this rather than
+motivating a threshold.
+
+The system prompt (`anthropic.go`) also states explicitly that document
+content is data to structure, never instructions to follow, since raw PDF
+text is user-controlled and adversarial-input-shaped. This is defense in
+depth, not the primary defense — grounding is: even a prompt-injected
+response still has to survive `Verify` against the real extracted text.
+
 ## Package responsibilities
 
 - `backend/cmd/server` — binary entry point; wires `api.NewMux()` to
@@ -63,23 +130,53 @@ lines differ.
   extraction), `normalize.go` (tokenization), `diff.go` (generic LCS core +
   word-level diff), `align.go` (cue-level diff + changed-pair heuristic).
   No HTTP, no JSON, no external dependencies.
+- `backend/internal/pdftext` — `pdftext.go` (`ExtractText`, `PageText`).
+  PDF bytes to per-page plain text, or a clear rejection. No notion of
+  scripts, characters, or AI; no interface (a single call site can have its
+  library swapped without one — that's not what interfaces are for).
+- `backend/internal/aiparse` — `aiparse.go` (`CandidateScript`,
+  `CandidateElement`, the `ScriptInterpreter` interface), `anthropic.go`
+  (the real Anthropic-backed implementation, prompt, and schema),
+  `verify.go` (content-grounding validation), `fake.go`
+  (`FakeInterpreter`, for fast deterministic tests). Turns raw extracted
+  text into a candidate structure; never touches `internal/domain`'s
+  comparison types.
 - `backend/internal/api` — `handlers.go` (JSON DTOs, `HandleCompare`,
-  `NewMux`). Translates between the wire format and `internal/domain`;
+  `NewMux`, the `scriptSource` tagged union, confirmed-elements-to-`Script`
+  conversion), `import.go` (`handleScriptImport`, the PDF upload endpoint).
+  Translates between the wire format and `internal/domain`/`internal/aiparse`;
   owns validation judgment calls domain functions don't make (e.g.
   rejecting a character absent from the *script* as user error, while
   a character absent from the *transcript* is a valid all-missing result).
 - `frontend/src/api` — `types.ts` (hand-written mirror of the Go JSON
   contract — no codegen, so it can drift; check it when `handlers.go`'s
-  DTOs change), `compareApi.ts` (the one place that calls `fetch`).
+  DTOs change), `compareApi.ts` / `importApi.ts` (the only places that call
+  `fetch`).
 - `frontend/src/features/compare` — the compare form, result rendering
   (`LineNotesList`/`LineNoteRow`/`WordDiffText`), and `useCompare` (async
   request lifecycle).
+- `frontend/src/features/import` — `PdfUploadForm.tsx` (file upload),
+  `ScriptPreviewTable.tsx` (editable per-row review: relabel kind,
+  edit/delete, `Verified: false` flagged), `ScriptImport.tsx` (ties upload
+  → preview → confirm together), `useImport` (async request lifecycle,
+  mirroring `useCompare`).
 
 ## Commands
 
 Backend (from `backend/`; `go` may need `/usr/local/go/bin` on `PATH`):
-- Run: `go run ./cmd/server` (port 8080)
-- Test: `go test ./...` (add `-v` / `-cover` as needed)
+- Run: `go run ./cmd/server` (port 8080) — requires `ANTHROPIC_API_KEY` to
+  be set (fails fast at startup otherwise). Local dev keeps it in
+  `backend/.env` (gitignored; see `.env.example`), loaded by `main.go`
+  relative to the process's working directory — so run this from
+  `backend/`, not from inside `cmd/server/`.
+- Test: `go test ./...` (add `-v` / `-cover` as needed). This never hits
+  the real Anthropic API — `internal/api`/`internal/aiparse` tests use
+  `aiparse.FakeInterpreter`.
+- Real-API checks (opt-in, not part of the above): `TestAnthropicInterpreterRealSmoke`
+  and `TestEvalSuite` in `internal/aiparse` are skipped unless
+  `ANTHROPIC_API_KEY` is set in the test's environment. Run explicitly with
+  `go test ./internal/aiparse/... -run TestEvalSuite -v` — costs real
+  money and has real latency/non-determinism, so it's never run by default.
 - Lint/format: `go vet ./...`, `gofmt -l .`
 - Build: `go build ./...`
 
@@ -122,6 +219,18 @@ consumer for them yet (no parse-preview UI, no diagnostics field in the
 API contract), so don't add a warnings type speculatively; `Script`
 already preserves the relevant information passively via
 `KindUnclassified`.
+
+`aiparse.ScriptInterpreter` is the one interface this codebase actually
+has, and it earns its keep for a different reason than "might need a
+second implementation someday": a real implementation means a real
+network call with real cost, latency, and non-determinism, so a fast,
+deterministic fake (`aiparse.FakeInterpreter`) buys test speed a real call
+never could — that's the legitimate seam, not swappability. Contrast with
+`pdftext.ExtractText`, which has no interface despite also wrapping a
+third-party library: it's local, fast, and deterministic, so its one call
+site can have its library swapped with zero interface needed. The
+lesson generalizes: an interface is for a *testing or deployment* boundary
+that actually needs one, not for "this wraps an external package."
 
 ## Known limitation: the cue-pairing heuristic in `align.go`
 
@@ -206,3 +315,41 @@ still show the script's surface form for the equal portions on the spoken
 side. Fixing that fully would mean `WordDiffSpan` carrying separate
 script/spoken text for equal spans; not done since it's not the reported
 case and touches the wire contract. Revisit if real usage shows it matters.
+
+## Known limitations: PDF ingestion
+
+- **Short excerpts only, no chunking.** `pdftext.MaxPages`/
+  `MaxExtractedChars` cap this to a scene or short excerpt, not a full
+  script. A short excerpt fits one structured-output call; whole-play
+  import would need a long-document/chunking strategy that hasn't been
+  designed. Rejected clearly at upload time, not silently truncated.
+- **No OCR.** A PDF with no embedded text layer (a scanned page rendered
+  as an image) is rejected (`pdftext.ErrNoTextLayer`) rather than attempted
+  — out of scope for this slice.
+- **Grounding proves evidence existed and is consistent, not that
+  classification is correct.** `Verify` confirms `SourceEvidence` is real
+  text from the document and that `Text` is substantially the same words —
+  it says nothing about whether Claude's `kind`/`character` judgment was
+  right (e.g. calling a stage direction dialogue, or misattributing a
+  line). That's what the human review step is for, not validation.
+- **The word-overlap check is a bag-of-words check, not an ordering
+  check** (`overlapRatio`, `verify.go`) — text whose words are a real
+  anagram of its evidence's would pass. Same category of accepted,
+  narrow heuristic limitation as `align.go`'s pairing gate above; not
+  tightened without a concrete case motivating it.
+- **No aggregate rejection threshold, and Stage E's real-API evaluation
+  suite (`aiparse.TestEvalSuite`) confirmed this rather than motivating
+  one to be added**: every real fixture came back 100% verified, with no
+  observed "mostly good, some noise" case for a percentage threshold to
+  actually help with. The only aggregate failure condition remains
+  `aiparse.ErrNothingVerified` (literally zero elements verified).
+- **Claude's own cleanup is inconsistent, not just imperfect
+  extraction.** Manual testing found the same document had an inline
+  parenthetical aside stripped from one dialogue line's `Text` but left
+  attached to another, with nothing distinguishing the two that would
+  explain the different treatment — a real behavior quirk to expect in
+  review, not a bug to chase.
+- **No persistence across a page refresh during import review.** Confirmed
+  elements only exist in React state until handed to the compare form;
+  reloading loses an in-progress review. Flagged in the UI, not fixed —
+  there's no persistence layer anywhere else in this project either.
