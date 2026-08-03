@@ -1,0 +1,10 @@
+HAMLET: Who's there?
+FRANCISCO: Nay, answer me. Stand and unfold yourself.
+HAMLET: Long live the czar!
+FRANCISCO: Bernardo?
+BERNARDO: He.
+FRANCISCO: For this relief much thanks. 'Tis bitter cold,
+and I am sick at heart.
+BERNARDO: Have you had quiet guard?
+FRANCISCO: Not a mouse stirring.
+BERNARDO: Good night to you then.
