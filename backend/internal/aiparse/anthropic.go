@@ -3,6 +3,7 @@ package aiparse
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -14,9 +15,19 @@ import (
 	"github.com/joshakeman/stage-assist/backend/internal/pdftext"
 )
 
+// ErrResponseTruncated means Claude's response was cut off by the
+// per-call output-token limit before it could finish the structured
+// result -- caught via the API's own stop_reason, before the response is
+// ever handed to parseToolInput/Verify. This is deliberately distinct from
+// ErrNothingVerified: nothing was verified here because nothing usable was
+// ever produced, not because grounding rejected real content. A real
+// 5-page excerpt hit this in practice when maxResponseTokens was too low
+// for its size -- see CLAUDE.md's PDF ingestion limitations.
+var ErrResponseTruncated = errors.New("aiparse: the AI's response was cut off before it finished (the excerpt was too large for one call)")
+
 const (
 	toolName          = "submit_script_structure"
-	maxResponseTokens = 4096
+	maxResponseTokens = 16000
 	// callTimeout bounds every Anthropic call regardless of what the caller
 	// passes in -- context.WithTimeout only tightens an existing deadline,
 	// never loosens one, so this is a safety ceiling, not an override.
@@ -82,6 +93,9 @@ func (a *AnthropicInterpreter) InterpretScript(ctx context.Context, pages []pdft
 	})
 	if err != nil {
 		return CandidateScript{}, fmt.Errorf("aiparse: calling Anthropic: %w", err)
+	}
+	if message.StopReason == anthropic.StopReasonMaxTokens {
+		return CandidateScript{}, ErrResponseTruncated
 	}
 
 	for _, block := range message.Content {

@@ -113,6 +113,14 @@ func TestHandleScriptImportRejectsScannedPDF(t *testing.T) {
 	}
 }
 
+func TestHandleScriptImportReturnsUnprocessableWhenResponseWasTruncated(t *testing.T) {
+	fake := &aiparse.FakeInterpreter{Err: aiparse.ErrResponseTruncated}
+	rec := doImport(t, fake, "file", colonStyleFixture)
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want %d; body = %s", rec.Code, http.StatusUnprocessableEntity, rec.Body.String())
+	}
+}
+
 func TestHandleScriptImportReturnsUnprocessableWhenNothingVerified(t *testing.T) {
 	fake := &aiparse.FakeInterpreter{Err: aiparse.ErrNothingVerified}
 	rec := doImport(t, fake, "file", colonStyleFixture)

@@ -60,6 +60,11 @@ func (s *server) handleScriptImport(w http.ResponseWriter, r *http.Request) {
 	}
 
 	candidate, err := s.interpreter.InterpretScript(r.Context(), pages)
+	if errors.Is(err, aiparse.ErrResponseTruncated) {
+		writeError(w, http.StatusUnprocessableEntity,
+			"this excerpt was too large for the AI to structure in one pass; please try a shorter excerpt")
+		return
+	}
 	if errors.Is(err, aiparse.ErrNothingVerified) {
 		writeError(w, http.StatusUnprocessableEntity,
 			"the AI's interpretation couldn't be verified against your document; please try again or paste the script as text")

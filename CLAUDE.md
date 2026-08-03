@@ -108,18 +108,53 @@ bytes" approach `internal/domain` already uses for alignment
 this package.
 
 **Failure policy is deliberately simple, not tuned aggregate scoring**: an
-import fails only when the response doesn't parse into the expected
-structure at all, or when literally zero elements verify
-(`aiparse.ErrNothingVerified`). There's no percentage-based aggregate
-rejection threshold on top of that, by design — see the known limitations
-below for why real evaluation data ended up confirming this rather than
-motivating a threshold.
+import fails when the response doesn't parse into the expected structure
+at all, when it was cut off before finishing
+(`aiparse.ErrResponseTruncated`, detected via the API's own `stop_reason`
+— see "Error handling" below for why this is its own distinct case), or
+when literally zero elements verify (`aiparse.ErrNothingVerified`).
+There's no percentage-based aggregate rejection threshold on top of that,
+by design — see the known limitations below for why real evaluation data
+ended up confirming this rather than motivating a threshold.
 
 The system prompt (`anthropic.go`) also states explicitly that document
 content is data to structure, never instructions to follow, since raw PDF
 text is user-controlled and adversarial-input-shaped. This is defense in
 depth, not the primary defense — grounding is: even a prompt-injected
 response still has to survive `Verify` against the real extracted text.
+
+## Error handling: distinguish root causes, don't collapse them
+
+When a request can fail for genuinely different reasons, give each one its
+own distinct sentinel error and its own actionable message — don't let one
+generic error/message stand in for causes that call for a different next
+action from the user.
+
+This came from a real bug, not a style preference. `aiparse.InterpretScript`
+originally let "the AI's response was cut off by its own output-token
+limit before it finished" fall through to the same `ErrNothingVerified`
+path as "grounding genuinely rejected every element," so both produced the
+identical message: *"the AI's interpretation couldn't be verified against
+your document; please try again or paste the script as text."* That's
+actively misleading for the truncation case — retrying or pasting plain
+text does nothing, because the real fix (a shorter excerpt, or a higher
+token limit) is completely different. It wasn't caught until a real
+5-page excerpt hit it outside of testing (see the PDF ingestion known
+limitations below).
+
+The fix: check the Anthropic API's own `stop_reason` for
+`StopReasonMaxTokens` explicitly, before the response is ever handed to
+`parseToolInput`/`Verify`, and return a distinct sentinel
+(`aiparse.ErrResponseTruncated`) that `internal/api` maps to its own
+specific message. Two errors, two messages, because they call for two
+different user actions.
+
+Apply this test generally, in any package: before reusing an existing
+error or message for a new failure mode, ask whether the user's correct
+next action would actually differ (retry vs. shorten input vs. nothing
+they can do vs. a config problem only a developer can fix). If it would,
+it needs its own distinct error and message, even when the surrounding
+code path is otherwise the same.
 
 ## Package responsibilities
 
